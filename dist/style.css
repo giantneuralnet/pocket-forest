@@ -1,0 +1,572 @@
+:root {
+  --ink: #253f32;
+  --muted: #72806c;
+  --paper: #f7f7ee;
+  --green: #345d3d;
+  --line: #dce1d2;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    14px system-ui,
+    -apple-system,
+    sans-serif;
+}
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 15px;
+  transition: background 0.15s;
+}
+button:hover {
+  background: #e3e9da;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #ce943d;
+  outline-offset: 3px;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+header {
+  min-height: 145px;
+  padding: 24px 34px;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 2px;
+}
+.mark {
+  font-size: 40px;
+  font-weight: 300;
+}
+.brand small {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.phase {
+  text-align: center;
+}
+h1 {
+  font:
+    32px Georgia,
+    serif;
+  margin: 8px 0;
+}
+p {
+  line-height: 1.6;
+}
+.phase p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+#steps {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+#steps span {
+  width: 23px;
+  height: 3px;
+  background: var(--line);
+}
+#steps .done {
+  background: #a5b791;
+}
+#steps .active {
+  background: var(--green);
+}
+small {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+}
+.budget {
+  text-align: right;
+}
+.budget strong {
+  display: block;
+  font:
+    26px Georgia,
+    serif;
+  margin: 3px 0 10px;
+}
+.budget button {
+  font-size: 11px;
+  padding: 7px 10px;
+}
+#count {
+  background: #e4eadb;
+  border-radius: 50%;
+  padding: 2px 5px;
+  margin-left: 5px;
+}
+main {
+  height: clamp(380px, 56vh, 650px);
+  position: relative;
+  overflow: hidden;
+  background: #e7eddf;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  touch-action: none;
+}
+#scene,
+#scene canvas,
+#markers {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#markers {
+  pointer-events: none;
+}
+.plant-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1px solid #fff9;
+  background: #f7f7eef2;
+  box-shadow: 0 3px 14px #2c472c12;
+  border-radius: 30px;
+  pointer-events: auto;
+  padding: 6px 10px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.plant-marker.seen {
+  background: #dae6cfde;
+}
+.plant-marker.weed {
+  color: #b14f37;
+  font-weight: bold;
+  padding: 4px 9px;
+  border-color: #c98766;
+}
+.scene-label {
+  position: absolute;
+  top: 22px;
+  font-size: 9px;
+  letter-spacing: 1.7px;
+  pointer-events: none;
+}
+.scene-label span {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0;
+  color: #748572;
+}
+.scene-label.left {
+  left: 26px;
+}
+.scene-label.center {
+  left: 50%;
+  text-align: center;
+  transform: translateX(-50%);
+}
+.scene-label.right {
+  right: 26px;
+}
+.view-controls {
+  position: absolute;
+  left: 20px;
+  bottom: 18px;
+  display: flex;
+  gap: 4px;
+}
+.view-controls button {
+  background: #f7f7eee8;
+  padding: 6px 11px;
+  font-size: 11px;
+}
+#weather {
+  position: absolute;
+  right: 22px;
+  bottom: 20px;
+  font-size: 11px;
+  color: #ececdd;
+}
+.soil-stats {
+  display: flex;
+  gap: 25px;
+  align-items: center;
+}
+.soil-stats > div {
+  width: 106px;
+}
+.soil-stats strong {
+  display: block;
+  font:
+    20px Georgia,
+    serif;
+  margin: 3px 0;
+}
+meter {
+  width: 100%;
+  height: 4px;
+  display: block;
+}
+meter::-webkit-meter-bar {
+  background: #dde4d5;
+  border: 0;
+}
+meter::-webkit-meter-optimum-value {
+  background: #719269;
+}
+.legend {
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 2;
+  width: 140px !important;
+}
+.dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #7ea1b5;
+  margin-right: 4px;
+}
+.dot.sun {
+  background: #c4a45d;
+}
+footer {
+  padding: 22px 30px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: center;
+}
+#actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+#actions button {
+  font-size: 11px;
+  background: #edf0e5;
+}
+.primary {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+  min-width: 145px;
+}
+.primary:hover {
+  background: #426c48;
+}
+.primary:disabled {
+  background: #c9d2bf;
+  color: #5d6a53;
+  border-color: #c9d2bf;
+}
+.active-tool {
+  box-shadow: inset 0 0 0 2px #456c47;
+}
+#selection {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--paper);
+  padding: 13px 17px;
+  border-radius: 9px;
+  box-shadow: 0 5px 30px #1d321c20;
+  display: none;
+  text-align: center;
+  font-size: 12px;
+  max-width: 90%;
+  width: 360px;
+}
+#selection button {
+  margin: 9px 3px 0;
+  padding: 7px 12px;
+  font-size: 11px;
+}
+#toast {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 18px;
+  background: #263e32f2;
+  color: #fff;
+  border-radius: 8px;
+  max-width: 480px;
+  width: max-content;
+  max-width: min(90%, 480px);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+#toast.show {
+  opacity: 1;
+}
+dialog {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  width: min(590px, 94vw);
+  max-height: 85vh;
+  padding: 30px;
+  box-shadow: 0 20px 100px #1f33243b;
+}
+dialog::backdrop {
+  background: #233e3238;
+  backdrop-filter: blur(3px);
+}
+.close {
+  position: sticky;
+  top: 0;
+  float: right;
+  font-size: 22px;
+  padding: 0 8px;
+  z-index: 1;
+  background: var(--paper);
+}
+dialog h2 {
+  font:
+    32px Georgia,
+    serif;
+  margin: 8px 0 12px;
+}
+dialog h3 {
+  font:
+    21px Georgia,
+    serif;
+  margin: 8px 0;
+}
+dialog p {
+  font-size: 13px;
+  color: #65745e;
+}
+.eyebrow {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.badge {
+  display: inline-block;
+  font-size: 9px;
+  padding: 5px 8px;
+  background: #e0ead5;
+  border-radius: 20px;
+  margin: 8px 6px 5px 0;
+}
+.badge.exotic {
+  background: #f1e2c8;
+}
+.entry {
+  border-top: 1px solid var(--line);
+  padding: 17px 0;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+.entry > div {
+  flex: 1;
+}
+.entry small {
+  font-style: italic;
+  letter-spacing: 0;
+}
+.entry button {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.entry p {
+  margin: 5px 0;
+  font-size: 11px;
+}
+.ref-photo {
+  height: 160px;
+  width: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  margin: 10px 0;
+}
+.score {
+  font:
+    76px Georgia,
+    serif;
+  color: #52774a;
+}
+.score small {
+  font-size: 20px;
+}
+#timeline {
+  margin: 0 auto;
+  padding: 0 30px 8px;
+  max-width: 800px;
+}
+#timeline > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--green);
+  margin: 10px 0;
+}
+#speeds {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+#speeds button {
+  font-size: 10px;
+  padding: 6px 12px;
+}
+#speeds .chosen {
+  background: #dce7ce;
+}
+.bottom-note {
+  text-align: center;
+  color: #8c9884;
+  font:
+    italic 12px Georgia,
+    serif;
+  padding: 8px 0 14px;
+}
+.bottom-note button {
+  font: 10px system-ui;
+  border: 0;
+  text-decoration: underline;
+  padding: 4px 10px;
+  color: var(--muted);
+}
+#fatal {
+  padding: 80px 30px;
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  text-align: center;
+}
+a {
+  color: #466745;
+}
+body.growing main {
+  height: clamp(350px, 50vh, 600px);
+}
+@media (max-width: 760px) {
+  header {
+    padding: 14px 16px;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .phase {
+    grid-column: 1/-1;
+    grid-row: 2;
+  }
+  .brand {
+    font-size: 10px;
+  }
+  .brand small {
+    font-size: 8px;
+  }
+  .budget strong {
+    font-size: 20px;
+    display: inline;
+    margin-right: 8px;
+  }
+  .budget > small {
+    display: none;
+  }
+  .budget button {
+    font-size: 10px;
+  }
+  h1 {
+    font-size: 26px;
+  }
+  .phase p {
+    font-size: 11px;
+    max-width: 95%;
+    margin: auto;
+  }
+  main {
+    height: 48vh;
+    min-height: 360px;
+  }
+  .scene-label {
+    font-size: 7px;
+    letter-spacing: 1px;
+  }
+  .scene-label.right {
+    display: none;
+  }
+  .scene-label.left {
+    left: 12px;
+    top: 15px;
+  }
+  .scene-label.center {
+    top: 43px;
+  }
+  footer {
+    padding: 14px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .soil-stats {
+    width: 100%;
+    justify-content: center;
+  }
+  .legend {
+    display: none;
+  }
+  #actions {
+    flex: 1;
+  }
+  #next {
+    min-width: 100px;
+    font-size: 12px;
+  }
+  body.growing main {
+    height: 42vh;
+  }
+  .plant-marker {
+    font-size: 9px;
+    padding: 6px;
+  }
+  #timeline {
+    padding: 0 15px;
+  }
+  .bottom-note {
+    font-size: 10px;
+  }
+}

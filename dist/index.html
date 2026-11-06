@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#e9eee2" />
+    <title>Pocket Forest — Tokushima</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./" aria-label="Pocket Forest home"
+        ><span class="mark">♧</span
+        ><span>POCKET FOREST<small>TOKUSHIMA, JAPAN</small></span></a
+      >
+      <div class="phase">
+        <div id="steps"></div>
+        <h1 id="phaseTitle">Survey the woodland</h1>
+        <p id="instruction"></p>
+      </div>
+      <div class="budget">
+        <small>YOUR FOREST FUND</small><strong id="money"></strong
+        ><button id="notebook">Field notebook <span id="count">0</span></button>
+      </div>
+    </header>
+    <main id="world">
+      <div id="scene"></div>
+      <div id="markers"></div>
+      <div class="scene-label left">
+        EXISTING WOODLAND <span>← drag to explore</span>
+      </div>
+      <div class="scene-label center">
+        YOUR LITTLE FOREST <span>6 m × 2 m planting bed</span>
+      </div>
+      <div class="scene-label right">EXISTING WOODLAND</div>
+      <div class="view-controls">
+        <button id="panLeft" aria-label="Pan left">←</button
+        ><button id="home">Plot</button
+        ><button id="panRight" aria-label="Pan right">→</button
+        ><button id="zoomOut" aria-label="Zoom out">−</button
+        ><button id="zoomIn" aria-label="Zoom in">+</button>
+      </div>
+      <div id="weather"></div>
+      <div id="selection"></div>
+      <div id="toast" role="status" aria-live="polite"></div>
+      <div id="fatal" hidden></div>
+    </main>
+    <footer>
+      <div class="soil-stats">
+        <div>
+          <small>SOIL MOISTURE</small><strong id="moisture"></strong
+          ><meter id="moistureMeter" min="0" max="100"></meter>
+        </div>
+        <div>
+          <small>NUTRIENTS</small><strong id="nutrients"></strong
+          ><meter id="nutrientMeter" min="0" max="100"></meter>
+        </div>
+        <div class="legend">
+          <span class="dot"></span> Roots seek moisture<br /><span
+            class="dot sun"
+          ></span>
+          Shoots seek sunlight
+        </div>
+      </div>
+      <div id="actions"></div>
+      <button id="next" class="primary"></button>
+    </footer>
+    <div id="timeline" hidden>
+      <div><span id="date"></span><span id="remaining"></span></div>
+      <progress id="progress" max="1095" value="0"></progress>
+      <div id="speeds"></div>
+    </div>
+    <dialog id="panel">
+      <button id="closePanel" class="close" aria-label="Close panel">×</button>
+      <div id="panelContent"></div>
+    </dialog>
+    <div class="bottom-note">
+      A small forest. A long future.
+      <button id="about">About this experiment</button
+      ><button id="restart">Start again</button>
+    </div>
+    <script type="module" src="game.js"></script>
+  </body>
+</html>
