@@ -64,3 +64,5 @@ The previous renderer posed all trees together roughly 11 times per second, recr
 Routine saves run in browser idle time; root histories use compact numeric arrays with micrometer coordinate precision to reduce storage usage. No saved root is re-routed. Tests cover a dense 60-plant root history and restoration, along with root-buffer identity across growth. Lightweight frame/pose/buffer counters are available on the scene and world DOM elements for development diagnostics.
 
 Flowering native reference species include Yabutsubaki, Hisakaki, Nezumimochi and Yabukoji. Their seasonal flowers, including those in the surveyed woodland, attract simple cube bees and butterflies. Nursery entries identify flowering species.
+
+Version 0.5 keeps the perspective camera straight-on, adds attached branches and leaves extending in depth, plain leaf stamps, spherical distant clouds, age-thickened trunks, lighter brown roots, darker moisture-aware soil, and compact dark HUD panels.

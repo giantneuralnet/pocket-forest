@@ -61,7 +61,7 @@ export function soilColorHSL(cell) {
   return {
     h: 0.074,
     s: 0.24 + clamp(cell.n / 100) * 0.48,
-    l: 0.46 - clamp(cell.m / 100) * 0.29,
+    l: 0.16 - clamp(cell.m / 100) * 0.11,
   };
 }
 export function rootThickness(segment) {

@@ -17,6 +17,7 @@ export function makeArchitecture(sp, seed) {
           ? Math.min(width, nodes[parent].width * 0.65)
           : width,
       depth,
+      depthAngle: depth ? (random(seed + serial * 43) - 0.5) * 2.4 : (random(seed + serial * 31) - 0.5) * 0.12,
       seed: seed + serial++ * 17,
     };
     nodes.push(n);
@@ -31,6 +32,8 @@ export function makeArchitecture(sp, seed) {
         branch: index,
         at: 0.3 + ((i + 0.3) / count) * 0.68,
         angle: side * (0.55 + s * 0.65),
+        tilt: (random(seed + index * 29 + i * 7) - 0.5) * 1.7,
+        roll: (random(seed + index * 13 + i * 23) - 0.5) * 1.3,
         petiole: 0.012 + s * 0.014,
         size: 0.75 + random(index * 7 + i + seed) * 0.5,
         birth: nodes[index].birth + 0.06 + i * 0.015,
@@ -125,8 +128,9 @@ export function poseArchitecture(recipe, maturity, time = 0) {
       ? {
           x: parent.a.x + (parent.b.x - parent.a.x) * n.at,
           y: parent.a.y + (parent.b.y - parent.a.y) * n.at,
+          z: parent.a.z + (parent.b.z - parent.a.z) * n.at,
         }
-      : { x: 0, y: 0 };
+      : { x: 0, y: 0, z: 0 };
     const growth = clamp((maturity - n.birth) / n.duration);
     const g = growth * (parent ? clamp(parent.growth * 2) : 1);
     const angle =
@@ -139,6 +143,7 @@ export function poseArchitecture(recipe, maturity, time = 0) {
       b: {
         x: start.x + Math.sin(angle) * length,
         y: start.y + Math.cos(angle) * length,
+        z: start.z + Math.sin(n.depthAngle || 0) * length,
       },
       angle,
       growth: g,
@@ -152,6 +157,7 @@ export function leafAttachment(leaf, pose, health = 100) {
     base = {
       x: branch.a.x + (branch.b.x - branch.a.x) * leaf.at,
       y: branch.a.y + (branch.b.y - branch.a.y) * leaf.at,
+      z: branch.a.z + (branch.b.z - branch.a.z) * leaf.at,
     };
   const angle = branch.angle + leaf.angle + (health < 35 ? 0.35 : 0);
   return {
@@ -159,6 +165,7 @@ export function leafAttachment(leaf, pose, health = 100) {
     tip: {
       x: base.x + Math.sin(angle) * leaf.petiole,
       y: base.y + Math.cos(angle) * leaf.petiole,
+      z: base.z,
     },
     angle,
   };

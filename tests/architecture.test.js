@@ -21,6 +21,7 @@ test("each growing branch stays attached to its parent segment, including in win
         const node = recipe.nodes[i];
         if (node.parent < 0) return;
         const parent = pose[node.parent];
+        assert.ok(Math.abs(p.a.z - (parent.a.z + (parent.b.z - parent.a.z) * node.at)) < 1e-12);
         assert.ok(
           Math.abs(p.a.x - (parent.a.x + (parent.b.x - parent.a.x) * node.at)) <
             1e-12,
@@ -38,6 +39,7 @@ test("every leaf has a petiole anchored to an actual branch", () => {
   for (const leaf of recipe.leaves) {
     const a = leafAttachment(leaf, pose),
       p = pose[leaf.branch];
+    assert.ok(Math.abs(a.base.z - (p.a.z + (p.b.z - p.a.z) * leaf.at)) < 1e-12);
     assert.ok(Math.abs(a.base.x - (p.a.x + (p.b.x - p.a.x) * leaf.at)) < 1e-12);
     assert.ok(
       Math.abs(
@@ -86,3 +88,12 @@ test("new root tips favor the wetter neighboring soil", () => {
 });
 
 test('branch extension stays continuous while new branches emerge',()=>{const recipe=makeArchitecture(getSpecies('oak'),42);for(let maturity=.05;maturity<1;maturity+=.013){const a=poseArchitecture(recipe,maturity),b=poseArchitecture(recipe,maturity+.0001);for(let i=0;i<a.length;i++)assert.ok(Math.hypot(a[i].b.x-b[i].b.x,a[i].b.y-b[i].b.y)<.01);}});
+
+
+test("branches extend toward and away from the camera with varied leaf tilts", () => {
+  const recipe = makeArchitecture(getSpecies("oak"), 42);
+  const pose = poseArchitecture(recipe, 1.5);
+  assert.ok(pose.some(n => n.b.z - n.a.z > 0.03));
+  assert.ok(pose.some(n => n.b.z - n.a.z < -0.03));
+  assert.ok(new Set(recipe.leaves.map(l => l.tilt.toFixed(2))).size > 10);
+});

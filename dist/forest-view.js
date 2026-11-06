@@ -113,29 +113,6 @@ function stamp(sp) {
   }
   c.closePath();
   c.fill();
-  c.strokeStyle = "#9db58a";
-  c.lineWidth = 2;
-  c.beginPath();
-  c.moveTo(64, 127);
-  c.lineTo(64, 13);
-  c.stroke();
-  if (sp.id === "cinnamon") {
-    for (const side of [-1, 1]) {
-      c.beginPath();
-      c.moveTo(64, 112);
-      c.quadraticCurveTo(64 + side * 29, 74, 64 + side * 11, 24);
-      c.stroke();
-    }
-  } else
-    for (let j = 0; j < 5; j++) {
-      const y = 30 + j * 15;
-      c.beginPath();
-      c.moveTo(64, y + 13);
-      c.lineTo(38, y);
-      c.moveTo(64, y + 13);
-      c.lineTo(89, y);
-      c.stroke();
-    }
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
   texture.magFilter = T.LinearFilter;
@@ -149,6 +126,22 @@ export class ForestView {
     this.state = state;
     this.scene = new T.Scene();
     this.scene.background = new T.Color("#a9d7f1");
+    // Distant round cloud banks share one low-poly sphere geometry.
+    const cloudGeometry = new T.SphereGeometry(1, 12, 8);
+    const cloudMaterial = new T.MeshLambertMaterial({ color: 0xf7fbff });
+    this.clouds = new T.Group();
+    for (let i = 0; i < 13; i++) {
+      const cloud = new T.Group();
+      cloud.position.set((i - 6) * 27, 30 + random(i + 78) * 28, -85 - random(i) * 12);
+      for (let j = 0; j < 5; j++) {
+        const puff = new T.Mesh(cloudGeometry, cloudMaterial);
+        puff.position.set((j - 2) * 3.3, random(i * 7 + j) * 2, 0);
+        puff.scale.set(4.6, 2.4 + random(j + i) * 1.5, 2.8);
+        cloud.add(puff);
+      }
+      this.clouds.add(cloud);
+    }
+    this.scene.add(this.clouds);
     this.camera = new T.PerspectiveCamera(40, 1, 0.1, 240);
     this.camera.position.set(0, 0, 65);
     this.center = { x: 0, y: 8 };
@@ -184,9 +177,9 @@ export class ForestView {
     this.rainHits = new Map();
     this.ground = new T.Group();
     this.scene.add(this.ground);
-    box(this.ground, 0, -60, -1, 180, 120, 6, 0x765034);
+    box(this.ground, 0, -60, -1, 180, 120, 6, 0x453021);
 
-    box(this.ground, 0, -0.045, -1, 180, 0.09, 6, 0x5f462c);
+    box(this.ground, 0, -0.045, -1, 180, 0.09, 6, 0x39291e);
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
     const offsets = [12, 15.6, 19.5, 23, 27.5, 31, 35, 39, 44, 49, 55];
     for (const side of [-1, 1])
@@ -346,8 +339,8 @@ export class ForestView {
       this.camera.aspect = aspect;
       const distance = half / Math.tan((this.camera.fov * Math.PI) / 360);
       this.camera.position.set(
-        this.center.x + distance * 0.045,
-        this.center.y + distance * 0.09,
+        this.center.x,
+        this.center.y,
         distance,
       );
       this.camera.lookAt(this.center.x, this.center.y, 1);
@@ -513,7 +506,7 @@ export class ForestView {
       sp.deciduous &&
       p.age > 1 &&
       Math.floor((this.state.day % 365) / 91.25) === 3;
-    const signature = h.toFixed(4) + ":" + rec.winter + ":" + (health < 35);
+    const signature = h.toFixed(4) + ":" + Math.min(25, p.age || 0).toFixed(2) + ":" + rec.winter + ":" + (health < 35);
     if (rec.poseSignature !== signature) {
       this.posePlant(rec, 0);
       rec.poseSignature = signature;
@@ -560,19 +553,25 @@ export class ForestView {
       leafCount = 0;
     const drawSegment = (a, b, width) => {
       const dx = (b.x - a.x) * scale,
-        dy = (b.y - a.y) * scale;
-      if (Math.hypot(dx, dy) < 0.00001) return;
+        dy = (b.y - a.y) * scale,
+        dz = ((b.z || 0) - (a.z || 0)) * scale;
+      if (Math.hypot(dx, dy, dz) < 0.00001) return;
       dummy.position.set(
         (a.x + b.x) * 0.5 * scale,
         (a.y + b.y) * 0.5 * scale,
-        0,
+        ((a.z || 0) + (b.z || 0)) * 0.5 * scale,
       );
-      dummy.rotation.set(0, 0, -Math.atan2(dx, dy));
-      dummy.scale.set(width, Math.hypot(dx, dy), width);
+      dummy.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), new T.Vector3(dx, dy, dz).normalize());
+      dummy.scale.set(width, Math.hypot(dx, dy, dz), width);
       dummy.updateMatrix();
       wood.setMatrixAt(woodCount++, dummy.matrix);
     };
-    pose.forEach((n, i) => drawSegment(n.a, n.b, rec.recipe.nodes[i].width));
+    pose.forEach((n, i) => {
+      const node = rec.recipe.nodes[i];
+      const thickening = node.depth === 0 && sp.type !== "weed" && sp.type !== "fern"
+        ? 1 + 0.75 * (1 - Math.exp(-Math.max(0, p.age || 0) / 9)) : 1;
+      drawSegment(n.a, n.b, node.width * thickening);
+    });
     for (const l of rec.data) {
       const segment = pose[l.branch];
       if (
@@ -598,8 +597,8 @@ export class ForestView {
         (sp.leaf === "small" ? 0.72 : 1) *
         l.size *
         clamp((segment.growth - 0.15) / 0.85);
-      dummy.position.set(attachment.tip.x * scale, attachment.tip.y * scale, 0);
-      dummy.rotation.set(0, 0, -attachment.angle);
+      dummy.position.set(attachment.tip.x * scale, attachment.tip.y * scale, attachment.tip.z * scale);
+      dummy.rotation.set(l.tilt || 0, l.roll || 0, -attachment.angle, "ZYX");
       dummy.scale.set(
         size * (sp.leaf === "long" ? 0.7 : 1),
         size * (sp.leaf === "long" ? 1.5 : 1.1),
@@ -628,6 +627,8 @@ export class ForestView {
           maxX: -Infinity,
           minY: Infinity,
           maxY: -Infinity,
+          minZ: Infinity,
+          maxZ: -Infinity,
         };
         canopyClusters.set(l.branch, bounds);
       }
@@ -635,6 +636,8 @@ export class ForestView {
       bounds.maxX = Math.max(bounds.maxX, cx + reach);
       bounds.minY = Math.min(bounds.minY, cy - reach);
       bounds.maxY = Math.max(bounds.maxY, cy + reach);
+      bounds.minZ = Math.min(bounds.minZ, dummy.position.z - reach);
+      bounds.maxZ = Math.max(bounds.maxZ, dummy.position.z + reach);
       leafCount++;
     }
     let proxyCount = 0;
@@ -642,13 +645,13 @@ export class ForestView {
       dummy.position.set(
         (bounds.minX + bounds.maxX) / 2,
         (bounds.minY + bounds.maxY) / 2,
-        0,
+        (bounds.minZ + bounds.maxZ) / 2,
       );
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(
         bounds.maxX - bounds.minX,
         bounds.maxY - bounds.minY,
-        6 / Math.max(0.1, rec.height),
+        Math.max(bounds.maxZ - bounds.minZ, 6 / Math.max(0.1, rec.height)),
       );
       dummy.updateMatrix();
       rec.proxy.setMatrixAt(proxyCount++, dummy.matrix);
@@ -668,7 +671,7 @@ export class ForestView {
     );
     rec.flowers.forEach((f, i) => {
       const branch = pose[Math.max(0, pose.length - 1 - i * 3)];
-      f.position.set(branch.b.x * scale, branch.b.y * scale, 0.015);
+      f.position.set(branch.b.x * scale, branch.b.y * scale, branch.b.z * scale);
     });
     rec.poseTime = time;
     rec.pose = pose;
@@ -682,7 +685,7 @@ export class ForestView {
       rec.rootMesh = new T.InstancedMesh(
         rootGeometry,
         new T.MeshLambertMaterial({
-          color: rec.sp.type === "weed" ? 0xb1c37b : 0xddba7a,
+          color: rec.sp.type === "weed" ? 0xb59a77 : 0xc4a17b,
           transparent: true,
           opacity: 0.9,
           depthTest: false,
@@ -875,10 +878,10 @@ export class ForestView {
         points.push(
           n.a.x * scale,
           n.a.y * scale,
-          0,
+          n.a.z * scale,
           n.b.x * scale,
           n.b.y * scale,
-          0,
+          n.b.z * scale,
         );
       const leaves = new T.InstancedMesh(
           leafGeometry,
@@ -899,13 +902,13 @@ export class ForestView {
         points.push(
           a.base.x * scale,
           a.base.y * scale,
-          0.02,
+          a.base.z * scale,
           a.tip.x * scale,
           a.tip.y * scale,
-          0.02,
+          a.tip.z * scale,
         );
-        d.position.set(a.tip.x * scale, a.tip.y * scale, 0.02);
-        d.rotation.z = -a.angle;
+        d.position.set(a.tip.x * scale, a.tip.y * scale, a.tip.z * scale);
+        d.rotation.set(l.tilt || 0, l.roll || 0, -a.angle, "ZYX");
         d.scale.set(0.32 * l.size, 0.45 * l.size, 1);
         d.updateMatrix();
         leaves.setMatrixAt(i, d.matrix);
@@ -969,12 +972,12 @@ export class ForestView {
         const a = this.project(
             rec.p.x + n.a.x * rec.poseScale * rec.height,
             n.a.y * rec.poseScale * rec.height,
-            rec.p.z ?? 1,
+            (rec.p.z ?? 1) + n.a.z * rec.poseScale * rec.height,
           ),
           b = this.project(
             rec.p.x + n.b.x * rec.poseScale * rec.height,
             n.b.y * rec.poseScale * rec.height,
-            rec.p.z ?? 1,
+            (rec.p.z ?? 1) + n.b.z * rec.poseScale * rec.height,
           ),
           dx = b.x - a.x,
           dy = b.y - a.y,

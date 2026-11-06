@@ -744,3 +744,19 @@ meter::-webkit-meter-optimum-value {
     width: 100%;
   }
 }
+
+/* Compact dark overlays retain an unobstructed sky. */
+.phase h1, .phase p, #timeline {
+  color: #fff;
+  background: #0b111de8;
+  text-shadow: none;
+  border-radius: 8px;
+}
+.phase h1 { width: fit-content; margin: 8px auto 5px; padding: 5px 14px; }
+.phase p { width: fit-content; margin: 0 auto; padding: 7px 13px; }
+#timeline { padding: 8px 12px; box-sizing: border-box; }
+#toolBin { color: #f1f5fa; background: #101925f5; border-color: #364454; box-shadow: 0 4px 20px #0005; }
+#toolBin button, #toolBin select { background: #243448; color: #f6f9fd; border-color: #526277; }
+#toolBin button:hover { background: #354c64; }
+#toolBin .active-tool, #toolBin .chosen { background: #245f8e !important; color: #fff; }
+#toolBin #money, #toolBin .soil-stats { color: #f1f5fa; }
