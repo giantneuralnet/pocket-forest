@@ -128,7 +128,13 @@ export class ForestView {
     this.scene.background = new T.Color("#a9d7f1");
     // Distant round cloud banks share one low-poly sphere geometry.
     const cloudGeometry = new T.SphereGeometry(1, 12, 8);
-    const cloudMaterial = new T.MeshLambertMaterial({ color: 0xf7fbff });
+    const cloudColors = [];
+    for (let i = 0; i < cloudGeometry.attributes.position.count; i++) {
+      const shade = 0.82 + 0.18 * (cloudGeometry.attributes.normal.getY(i) + 1) / 2;
+      cloudColors.push(shade, shade + (1 - shade) * 0.3, 1);
+    }
+    cloudGeometry.setAttribute("color", new T.Float32BufferAttribute(cloudColors, 3));
+    const cloudMaterial = new T.MeshBasicMaterial({ color: 0xf7fbff, vertexColors: true });
     this.clouds = new T.Group();
     for (let i = 0; i < 13; i++) {
       const cloud = new T.Group();
