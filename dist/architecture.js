@@ -20,6 +20,8 @@ export function makeArchitecture(sp, seed) {
       depthAngle: depth ? (random(seed + serial * 43) - 0.5) * 2.4 : (random(seed + serial * 31) - 0.5) * 0.12,
       seed: seed + serial++ * 17,
     };
+    // A thin twig cannot support a disproportionately long bare run.
+    if (depth > 0) n.length = Math.min(n.length, Math.max(0.045, n.width * 25));
     nodes.push(n);
     return nodes.length - 1;
   }
@@ -116,7 +118,20 @@ export function makeArchitecture(sp, seed) {
       if (!herb) fork(i, 1, birth + 0.09, 0.17 + random(seed + j) * 0.11);
     }
     foliage(trunk[0], 2);
-    foliage(trunk[4], 3);
+    foliage(trunk[4], 7);
+    if (!herb && sp.layer > 0) {
+      // Later-emerging co-dominant leaders fork from the upper trunk.
+      for (let side of [-1, 1]) {
+        let parent = trunk[2];
+        for (let j = 0; j < 3; j++) {
+          parent = node(parent, j ? 1 : 0.8, 0.16 - j * 0.025,
+            side * (j ? 0.12 : 0.35), 0.44 + j * 0.08,
+            0.016 * Math.pow(0.7, j), 0);
+          foliage(parent, 6);
+          fork(parent, 1, 0.5 + j * 0.08, 0.12);
+        }
+      }
+    }
   }
   return { nodes, leaves };
 }

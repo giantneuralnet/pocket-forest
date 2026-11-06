@@ -66,3 +66,5 @@ Routine saves run in browser idle time; root histories use compact numeric array
 Flowering native reference species include Yabutsubaki, Hisakaki, Nezumimochi and Yabukoji. Their seasonal flowers, including those in the surveyed woodland, attract simple cube bees and butterflies. Nursery entries identify flowering species.
 
 Version 0.5 keeps the perspective camera straight-on, adds attached branches and leaves extending in depth, plain leaf stamps, spherical distant clouds, age-thickened trunks, lighter brown roots, darker moisture-aware soil, and compact dark HUD panels.
+
+Version 0.6: uniform outside soil and hidden woodland roots; plot soil shares the surface brown palette and responds to moisture/nutrients. Root headings vary more, root strokes are thicker, split leaders fill mature crowns, and thin twigs are length-limited. Plant selection adds a border without tinting foliage. Weed litter remains visible for 45 seconds and its decomposed nutrient return is shown over the affected soil. Camera overlays update every rendered frame. Clouds have a level base and smaller edge puffs; all panels use the dark theme.

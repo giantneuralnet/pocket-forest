@@ -760,3 +760,14 @@ meter::-webkit-meter-optimum-value {
 #toolBin button:hover { background: #354c64; }
 #toolBin .active-tool, #toolBin .chosen { background: #245f8e !important; color: #fff; }
 #toolBin #money, #toolBin .soil-stats { color: #f1f5fa; }
+
+/* A single dark visual system for tools, notebook and confirmations. */
+:root { --ink:#f1f5fa; --paper:#141e2c; --line:#425166; }
+#toolBin { justify-content:safe center; }
+dialog, #selection, #tooltip, #toast { color:#f1f5fa; background:#141e2cf5; border-color:#425166; }
+dialog p, dialog small, dialog i, dialog .eyebrow, #tooltip small { color:#bbc9da; }
+dialog button, #selection button { background:#26374d; color:#f1f5fa; border-color:#526277; }
+dialog .badge { background:#263d4e; color:#dbeaf5; }
+dialog .entry { border-color:#425166; }
+dialog::backdrop { background:#060c1699; }
+.nutrient-return { position:absolute; top:0; left:0; pointer-events:none; color:#b9f69d; background:#122319d9; padding:3px 7px; border-radius:5px; font:11px system-ui; white-space:nowrap; }

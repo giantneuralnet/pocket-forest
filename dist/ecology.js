@@ -61,7 +61,7 @@ export function soilColorHSL(cell) {
   return {
     h: 0.074,
     s: 0.24 + clamp(cell.n / 100) * 0.48,
-    l: 0.16 - clamp(cell.m / 100) * 0.11,
+    l: 0.12 - clamp(cell.m / 100) * 0.08,
   };
 }
 export function rootThickness(segment) {
@@ -276,9 +276,9 @@ export function growRoots(s, p) {
     const candidates = [-0.6, -0.3, 0, 0.3, 0.6]
       .map((turn, j) => {
         const angle = clamp(
-            heading * 0.65 + turn + (random(key + j * 11) - 0.5) * 0.22,
-            -1.28,
-            1.28,
+            heading * 0.9 + turn + (random(key + j * 11) - 0.5) * 0.8,
+            -1.49,
+            1.49,
           ),
           x = clamp(a.x + Math.sin(angle) * step, -69, 69),
           y = a.y - Math.cos(angle) * step;
@@ -289,7 +289,7 @@ export function growRoots(s, p) {
           score:
             cellAt(s, x, y).m * 0.8 +
             cellAt(s, x, y).n * 0.06 +
-            random(key + j * 7) * 4 -
+            random(key + j * 7) * 14 -
             Math.abs(angle - heading) * 1.5,
         };
       })
@@ -317,14 +317,14 @@ export function growRoots(s, p) {
     next.push(tip);
     if (
       tip.age > 4 &&
-      random(key + 97) < 0.16 &&
+      random(key + 97) < 0.24 &&
       next.length + forks.length < 10
     ) {
       const turn =
         (random(key + 5) < 0.5 ? -1 : 1) * (0.5 + random(key + 31) * 0.45);
       forks.push({
         ...tip,
-        angle: clamp(b.angle + turn, -1.28, 1.28),
+        angle: clamp(b.angle + turn, -1.49, 1.49),
         dir: turn < 0 ? -1 : 1,
         age: 0,
         radius: radiusB * 0.6,
@@ -332,6 +332,12 @@ export function growRoots(s, p) {
     }
   }
   p.tips = [...next, ...forks].slice(0, 10);
+}
+export function returnWeedToSoil(s, weed) {
+  for (let offset = -2; offset <= 2; offset++) {
+    const cell = cellAt(s, weed.x + offset * CW, -CH * 0.5);
+    cell.litter += (1.5 + (weed.biomass || 0.5)) * (1 - Math.abs(offset) * 0.2);
+  }
 }
 export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   s.day++;
@@ -352,7 +358,12 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
       cell.m = clamp(cell.m - evap, 0, 100);
       const decay = Math.min(cell.litter, (0.025 * cell.c * cell.m) / 100);
       cell.litter -= decay;
-      cell.n = clamp(cell.n + decay * 2 + 0.003 * cell.c, 0, 100);
+      const released = Math.min(100 - cell.n, decay * 2);
+      cell.n = clamp(cell.n + released + 0.003 * cell.c, 0, 100);
+      if (r === 0 && released > 0) {
+        s.nutrientReturns ??= {};
+        s.nutrientReturns[c] = (s.nutrientReturns[c] || 0) + released;
+      }
     }
     top.mulch = Math.max(0, top.mulch - 0.00013);
   }

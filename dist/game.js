@@ -1,3 +1,4 @@
+import { returnWeedToSoil } from "./ecology.js";
 import { species, layers, sources } from "./species.js";
 import {
   HALF,
@@ -536,10 +537,16 @@ function applyAt(x) {
   lastToolX = x;
   view.target = x;
 }
+const nutrientMarkers = [];
 function pluck(w) {
   view.uproot(w);
   state.weeds = state.weeds.filter((p) => p !== w);
-  cellAt(state, w.x).litter += 0.7;
+  returnWeedToSoil(state, w);
+  const c = Math.floor((w.x + HALF) / CW);
+  const marker = document.createElement("div");
+  marker.className = "nutrient-return";
+  $("weedAlerts").appendChild(marker);
+  nutrientMarkers.push({el:marker, x:w.x, c, baseline:state.nutrientReturns?.[c] || 0, until:performance.now()+45000});
   view.target = w.x;
   view.sync();
   highlight(null);
@@ -910,7 +917,6 @@ function frame(ms) {
   saveTime += dt;
   if (soilTime > 0.15) {
     view.updateSoil();
-    updateWeedAlerts();
     soilTime = 0;
   }
   if (uiTime > 0.45) {
@@ -924,6 +930,16 @@ function frame(ms) {
   }
   const renderStart = performance.now();
   view.render(dt, ms / 1000, tool, pointer, applying);
+  // Camera-relative overlays follow the same animation frame as the scene.
+  updateWeedAlerts();
+  for (let i = nutrientMarkers.length - 1; i >= 0; i--) {
+    const m = nutrientMarkers[i];
+    if (ms > m.until) { m.el.remove(); nutrientMarkers.splice(i,1); continue; }
+    const at = view.project(m.x, 0.3, 6);
+    m.el.style.transform = `translate(${at.x}px,${at.y}px) translate(-50%,-100%)`;
+    const released = (state.nutrientReturns?.[m.c] || 0) - m.baseline;
+    m.el.textContent = released > 0 ? `+${released.toFixed(2)} nutrients` : "Decomposing → nutrients";
+  }
   $("world").dataset.renderMs = (performance.now() - renderStart).toFixed(1);
   const cpu = performance.now() - cpuStart;
   framePeak = Math.max(framePeak, cpu);

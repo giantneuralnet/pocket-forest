@@ -141,8 +141,10 @@ export class ForestView {
       cloud.position.set((i - 6) * 27, 30 + random(i + 78) * 28, -85 - random(i) * 12);
       for (let j = 0; j < 5; j++) {
         const puff = new T.Mesh(cloudGeometry, cloudMaterial);
-        puff.position.set((j - 2) * 3.3, random(i * 7 + j) * 2, 0);
-        puff.scale.set(4.6, 2.4 + random(j + i) * 1.5, 2.8);
+        const taper = 1 - Math.abs(j - 2) / 3;
+        const radius = (2.7 + random(i * 37 + j) * 1.5) * (0.55 + taper * 0.65);
+        puff.position.set((j - 2) * 3.4, radius, 0);
+        puff.scale.set(radius * 1.2, radius, radius * 0.8);
         cloud.add(puff);
       }
       this.clouds.add(cloud);
@@ -183,9 +185,12 @@ export class ForestView {
     this.rainHits = new Map();
     this.ground = new T.Group();
     this.scene.add(this.ground);
-    box(this.ground, 0, -60, -1, 180, 120, 6, 0x453021);
+    this.baseSoilColor = new T.Color().setHSL(...Object.values(soilColorHSL({m: 50, n: 50})));
+    const soilBase = box(this.ground, 0, -60, -1, 180, 120, 6, 0x453021);
+    soilBase.material = new T.MeshBasicMaterial({color: this.baseSoilColor});
 
-    box(this.ground, 0, -0.045, -1, 180, 0.09, 6, 0x39291e);
+    const surface = box(this.ground, 0, -0.045, -1, 180, 0.09, 6, 0x39291e);
+    surface.material = new T.MeshBasicMaterial({color: this.baseSoilColor});
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
     const offsets = [12, 15.6, 19.5, 23, 27.5, 31, 35, 39, 44, 49, 55];
     for (const side of [-1, 1])
@@ -280,7 +285,7 @@ export class ForestView {
         const hsl = soilColorHSL(sampleSoil(this.state, x, y));
         this.soilMesh.setColorAt(
           r * this.soilCols + c,
-          new T.Color().setHSL(hsl.h, hsl.s, hsl.l),
+          Math.abs(x) < HALF ? new T.Color().setHSL(hsl.h, hsl.s, hsl.l) : this.baseSoilColor,
         );
       }
     this.mulchMesh = new T.InstancedMesh(boxGeometry, material(0x9b743e), COLS);
@@ -595,9 +600,9 @@ export class ForestView {
       );
       const size =
         clamp(
-          (0.09 + 0.9 * Math.sqrt(clamp(rec.height / sp.height))) /
+          (0.025 + 1.05 * Math.pow(clamp(rec.height / sp.height), 0.8)) /
             Math.max(0.1, rec.height),
-          0.024,
+          0.012,
           0.32,
         ) *
         (sp.leaf === "small" ? 0.72 : 1) *
@@ -663,9 +668,11 @@ export class ForestView {
       rec.proxy.setMatrixAt(proxyCount++, dummy.matrix);
     }
     wood.count = woodCount;
+    this.refreshWoodOutline(rec);
     wood.instanceMatrix.needsUpdate = true;
     wood.boundingSphere = new T.Sphere(new T.Vector3(0, 0.5, 0), 2.5);
     leaves.count = leafCount;
+    if (rec.outline) rec.outline.count = leafCount;
     leaves.instanceMatrix.needsUpdate = true;
     if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
     leaves.boundingSphere = new T.Sphere(new T.Vector3(0, 0.5, 0), 2.5);
@@ -685,6 +692,7 @@ export class ForestView {
     this.poseUpdates++;
   }
   updateRoots(rec) {
+    if (rec.p.wild) return;
     const segments = rec.p.roots || [];
     if (rec.rootCount === segments.length) return;
     if (!rec.rootMesh) {
@@ -712,7 +720,7 @@ export class ForestView {
         a = new T.Vector3(segment.a[0], segment.a[1], rec.p.z ?? 1),
         b = new T.Vector3(segment.b[0], segment.b[1], rec.p.z ?? 1),
         delta = b.clone().sub(a),
-        radius = rootThickness({ ...segment, originX: rec.p.x });
+        radius = rootThickness({ ...segment, originX: rec.p.x }) * 1.85;
       dummy.position.copy(a).add(b).multiplyScalar(0.5);
       dummy.quaternion.setFromUnitVectors(up, delta.clone().normalize());
       dummy.scale.set(radius, delta.length(), radius);
@@ -782,7 +790,7 @@ export class ForestView {
         r >= 0 &&
         r < this.soilRows &&
         fieldCol >= 0 &&
-        fieldCol < this.soilCols
+        fieldCol < this.soilCols && Math.abs(worldX) < HALF
       ) {
         const hsl = soilColorHSL(cell);
         this.soilMesh.setColorAt(
@@ -1000,11 +1008,54 @@ export class ForestView {
     return closest;
   }
   highlight(p) {
-    if (this.hover && this.records.has(this.hover.id))
-      this.records.get(this.hover.id).leaves.material.emissive.setHex(0);
+    if (this.hover && this.records.has(this.hover.id)) {
+      const old = this.records.get(this.hover.id);
+      if (old.outline) old.outline.visible = false;
+      if (old.woodOutline) old.woodOutline.visible = false;
+    }
     this.hover = p;
-    if (p && this.records.has(p.id))
-      this.records.get(p.id).leaves.material.emissive.setHex(0x4a5021);
+    const rec = p && this.records.get(p.id);
+    if (!rec) return;
+    if (!rec.outline) {
+      const outlineMaterial = new T.ShaderMaterial({
+        uniforms: { leafMap: {value: stamp(rec.sp).texture} },
+        vertexShader: `varying vec2 vUv; void main(){vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.0);}`,
+        fragmentShader: `uniform sampler2D leafMap; varying vec2 vUv;
+          void main(){float a=texture2D(leafMap,vUv).a; float edge=0.0;
+          for(int i=0;i<8;i++){float angle=float(i)*0.785398;
+          edge=max(edge,texture2D(leafMap,vUv+vec2(cos(angle),sin(angle))*0.025).a);}
+          if(a>0.5 || edge<0.5) discard; gl_FragColor=vec4(1.0,0.94,0.68,1.0);}`,
+        side:T.DoubleSide, transparent:true, depthWrite:false, depthTest:false,
+      });
+      rec.outline = new T.InstancedMesh(leafGeometry, outlineMaterial, rec.leaves.instanceMatrix.count);
+      rec.outline.instanceMatrix = rec.leaves.instanceMatrix;
+      rec.outline.renderOrder = 12;
+      rec.outline.frustumCulled = false;
+      rec.g.add(rec.outline);
+    }
+    if (!rec.woodOutline) {
+      rec.woodOutline = new T.InstancedMesh(taperedGeometry,
+        new T.MeshBasicMaterial({color:0xffefad, side:T.BackSide}), rec.wood.instanceMatrix.count);
+      rec.woodOutline.frustumCulled = false;
+      rec.g.add(rec.woodOutline);
+    }
+    this.refreshWoodOutline(rec);
+    rec.woodOutline.visible = true;
+    rec.outline.count = rec.leaves.count;
+    rec.outline.visible = true;
+  }
+  refreshWoodOutline(rec) {
+    if (!rec.woodOutline) return;
+    const matrix = new T.Matrix4(), pos = new T.Vector3(), rot = new T.Quaternion(), scale = new T.Vector3();
+    for (let i=0; i<rec.wood.count; i++) {
+      rec.wood.getMatrixAt(i, matrix);
+      matrix.decompose(pos,rot,scale);
+      scale.x *= 1.3; scale.z *= 1.3; scale.y *= 1.01;
+      matrix.compose(pos,rot,scale);
+      rec.woodOutline.setMatrixAt(i,matrix);
+    }
+    rec.woodOutline.count = rec.wood.count;
+    rec.woodOutline.instanceMatrix.needsUpdate = true;
   }
   exposure(x, y, self = null) {
     const key =
@@ -1170,7 +1221,8 @@ export class ForestView {
       kind: "weed",
       vx: 0.3,
       vy: 2.5,
-      life: 1.5,
+      life: 45,
+      settled: false,
     });
   }
   render(dt, time, tool, pointer, applying) {
@@ -1217,6 +1269,11 @@ export class ForestView {
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.life -= dt;
+      if (e.settled) {
+        if (e.life <= 0) { this.scene.remove(e.mesh); this.effects.splice(i, 1); }
+        else e.mesh.scale.setScalar(Math.min(1, e.life / 10));
+        continue;
+      }
       e.vy -= dt * (e.kind === "water" ? 5 : 4);
       e.mesh.position.x += e.vx * dt;
       e.mesh.position.y += e.vy * dt;
@@ -1232,7 +1289,8 @@ export class ForestView {
           e.vy = 0;
           e.vx = 0;
           e.mesh.rotation.z = 1.45;
-          e.life = Math.min(e.life, 0.8);
+          e.settled = true;
+          e.mesh.position.y = 0.08;
         } else e.life = 0;
       }
       if (e.life <= 0) {
@@ -1246,19 +1304,26 @@ export class ForestView {
     this.insects.forEach(({ g, wing, i }) => {
       g.visible = flowering.length > 0;
       if (g.visible) {
-        const r = flowering[Math.floor(time / 6 + i) % flowering.length];
-        const flower = r.flowers.filter((f) => f.visible)[
-            i % r.flowers.filter((f) => f.visible).length
-          ],
-          target = new T.Vector3();
-        flower.getWorldPosition(target);
-        target.x += Math.sin(time + i) * 0.22;
-        target.y += 0.15 + Math.cos(time * 1.2 + i) * 0.12;
-        target.z += 0.35;
-        if (!g.userData.arrived) {
-          g.position.copy(target);
-          g.userData.arrived = true;
-        } else g.position.lerp(target, Math.min(1, dt * 2.5));
+        const flight = g.userData;
+        if (!flight.target || time >= flight.nextTurn) {
+          const r = flowering[Math.floor(random(i * 71 + time * 3) * flowering.length)];
+          const flowers = r.flowers.filter(f => f.visible);
+          const flower = flowers[Math.floor(random(time + i * 19) * flowers.length)];
+          flight.target = new T.Vector3();
+          flower.getWorldPosition(flight.target);
+          // Alternate flower visits with unpredictable nearby exploration.
+          if (random(time + i * 43) < 0.65) {
+            flight.target.x += (random(time * 7 + i) - 0.5) * 4;
+            flight.target.y += random(time * 11 + i) * 2.5;
+            flight.target.z += (random(time * 13 + i) - 0.5) * 3;
+          }
+          flight.nextTurn = time + 0.8 + random(time + i) * 2.8;
+        }
+        if (!flight.arrived) { g.position.copy(flight.target); flight.arrived = true; }
+        const target = flight.target.clone();
+        target.x += Math.sin(time * 3.7 + i) * 0.2;
+        target.y += 0.2 + Math.sin(time * 4.3 + i * 3) * 0.18;
+        g.position.lerp(target, 1 - Math.exp(-dt * 1.6));
         wing.rotation.z = Math.sin(time * 45 + i) * 0.8;
       }
     });

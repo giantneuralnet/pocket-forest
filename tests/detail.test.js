@@ -90,3 +90,17 @@ test("compact saves restore root paths and remain small for a dense forest", asy
   );
   assert.equal(restored.plants.length, 60);
 });
+
+
+test("plucked weeds release nutrients into nearby surface soil as litter decays", async () => {
+  const {returnWeedToSoil, stepDay, colAt} = await import("../dist/ecology.js");
+  const s = freshState();
+  for (const cell of s.soil) { cell.m=70; cell.n=25; cell.c=0.8; }
+  const control = structuredClone(s);
+  returnWeedToSoil(s, {x:0,biomass:1});
+  for(let i=0;i<30;i++){stepDay(s);stepDay(control);}
+  const c=colAt(0);
+  assert.ok(s.soil[c].n > control.soil[c].n);
+  assert.ok(s.soil[c-1].n > control.soil[c-1].n);
+  assert.ok(s.nutrientReturns[c] > 0);
+});
