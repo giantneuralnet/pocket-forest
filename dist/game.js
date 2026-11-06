@@ -15,6 +15,8 @@ import {
   hydrology,
   addWater,
   stepDay,
+  TIME_RATES,
+  packState,
   score,
 } from "./ecology.js";
 import { ForestView } from "./forest-view.js";
@@ -39,6 +41,10 @@ try {
     "This forest needs WebGL. Open it in a browser with hardware acceleration enabled.";
   throw e;
 }
+let framePeak = 0,
+  frameCount = 0,
+  framesOver16 = 0,
+  monitorTime = 0;
 let tool = null,
   selected = null,
   highlighted = null,
@@ -75,11 +81,27 @@ const instructions = [
   "Review the health, variety, density and care of your forest.",
   "Watch your plants grow, water them, and pick weeds.",
 ];
-function save() {
-  if (resetting) return;
-  try {
-    localStorage.setItem("pocket-forest-v2", JSON.stringify(state));
-  } catch {}
+let savePending = false;
+function save(immediate = false) {
+  if (resetting || (savePending && immediate !== true)) return;
+  const write = () => {
+    savePending = false;
+    if (resetting) return;
+    try {
+      const packed = packState(state);
+      localStorage.setItem("pocket-forest-v2", packed);
+      $("world").dataset.saveStatus = "saved";
+      $("world").dataset.saveBytes = packed.length;
+    } catch (e) {
+      $("world").dataset.saveStatus = "failed";
+      console.warn("Forest save failed", e.name);
+    }
+  };
+  if (immediate === true || !window.requestIdleCallback) write();
+  else {
+    savePending = true;
+    requestIdleCallback(write, { timeout: 1200 });
+  }
 }
 function toast(text) {
   $("toast").textContent = text;
@@ -149,6 +171,7 @@ function formatAge(age) {
 }
 function hideTooltip() {
   $("tooltip").style.display = "none";
+  if (view?.soilOutline) view.soilOutline.visible = false;
 }
 function highlight(p) {
   highlighted = p;
@@ -165,6 +188,13 @@ function showTooltip(p, x, y, touch = false) {
   el.style.display = "block";
   el.style.left = clamp(x + 15, 8, innerWidth - 245) + "px";
   el.style.top = clamp(y + 19, 10, innerHeight - 105) + "px";
+}
+function showSoilTooltip(sample, x, y) {
+  const el = $("tooltip");
+  el.innerHTML = `<strong>Soil · ${Math.abs(sample.point.y).toFixed(1)} m deep</strong><small>Moisture <b>${sample.cell.m.toFixed(1)}%</b><br>Nutrients <b>${sample.cell.n.toFixed(1)}%</b></small>`;
+  el.style.display = "block";
+  el.style.left = clamp(x + 15, 8, innerWidth - 230) + "px";
+  el.style.top = clamp(y + 19, 10, innerHeight - 110) + "px";
 }
 $("notebook").onclick = () => {
   panel(
@@ -189,7 +219,7 @@ function shop() {
       .filter((s) => s && s.type !== "weed")
       .map(
         (s) =>
-          `<div class="entry"><div><h3>${s.name}</h3><small>${s.latin}</small><p>${nativeText(s)} · ${layers[s.layer]} · ${s.height} m</p></div><button data-buy="${s.id}" ${state.budget < s.price ? "disabled" : ""}>¥${s.price} · Buy</button></div>`,
+          `<div class="entry"><div><h3>${s.name}</h3><small>${s.latin}</small><p>${nativeText(s)} · ${layers[s.layer]} · ${s.height} m${s.flower ? " · Flowering / bees" : ""}</p></div><button data-buy="${s.id}" ${state.budget < s.price ? "disabled" : ""}>¥${s.price} · Buy</button></div>`,
       )
       .join("")}`,
   );
@@ -394,28 +424,17 @@ function updateStats() {
       ? "Free growth"
       : `${Math.max(0, 1095 - state.day)} days left`;
   $("progress").value = Math.min(1095, state.day);
-  if (!$("speeds").children.length) {
-    $("speeds").innerHTML = [
-      ["Pause", 0],
-      ["1×", 3],
-      ["4×", 12],
-      ["12×", 36],
-    ]
-      .map(([text, speed]) => `<button data-speed="${speed}">${text}</button>`)
-      .join("");
-    document.querySelectorAll("[data-speed]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          state.speed = +b.dataset.speed;
-          updateStats();
-        }),
-    );
+  if (!$("timeScale").options.length) {
+    $("timeScale").innerHTML = TIME_RATES.map(
+      (r) => `<option value="${r.value}">${r.label}</option>`,
+    ).join("");
+    $("timeScale").onchange = () => {
+      state.speed = +$("timeScale").value;
+      updateStats();
+    };
   }
-  document
-    .querySelectorAll("[data-speed]")
-    .forEach((b) =>
-      b.classList.toggle("chosen", +b.dataset.speed === state.speed),
-    );
+  $("timeScale").value = state.speed;
+  $("speeds").hidden = ![4, 6].includes(state.phase);
 }
 function prepare(i) {
   if (state.prep[i]) return;
@@ -454,7 +473,7 @@ function prepare(i) {
 function advance() {
   if (state.phase === 5) {
     state.phase = 6;
-    state.speed = 3;
+    state.speed = 1;
   } else state.phase++;
   selected = null;
   view.selected = null;
@@ -464,7 +483,7 @@ function advance() {
   updateUI();
   if (state.phase === 2) shop();
   if (state.phase === 4) {
-    state.speed = 3;
+    state.speed = 1;
     toast("Watch your plants grow, water them, and pick weeds.");
   }
   save();
@@ -553,7 +572,7 @@ function showReview() {
   $("continueReview").onclick = () => {
     $("panel").close();
     state.phase = 6;
-    state.speed = 3;
+    state.speed = 1;
     updateUI();
     save();
   };
@@ -613,9 +632,17 @@ world.addEventListener("pointerdown", (e) => {
     };
     return;
   }
-  const hit = view.hit(e.clientX, e.clientY, e.pointerType === "touch" ? 16 : 3),
-    point = view.worldPoint(e.clientX, e.clientY);
+  const hit = view.hit(
+      e.clientX,
+      e.clientY,
+      e.pointerType === "touch" ? 24 : 12,
+    ),
+    point = view.worldPoint(e.clientX, e.clientY, tool ? 3.05 : 1);
   view.target = point.x;
+  if (point.y < 0) {
+    const soil = view.inspectSoil(e.clientX, e.clientY);
+    if (soil) showSoilTooltip(soil, e.clientX, e.clientY);
+  }
   gesture = {
     x: e.clientX,
     y: e.clientY,
@@ -642,9 +669,15 @@ world.addEventListener("pointermove", (e) => {
   pointer = { x: e.clientX, y: e.clientY };
   if (!pointers.has(e.pointerId)) {
     if (e.pointerType !== "touch" && !tool) {
-      const p = view.hit(e.clientX, e.clientY);
-      highlight(p);
-      showTooltip(p, e.clientX, e.clientY);
+      const soil = view.inspectSoil(e.clientX, e.clientY);
+      if (soil) {
+        highlight(null);
+        showSoilTooltip(soil, e.clientX, e.clientY);
+      } else {
+        const p = view.hit(e.clientX, e.clientY);
+        highlight(p);
+        showTooltip(p, e.clientX, e.clientY);
+      }
     }
     return;
   }
@@ -667,7 +700,7 @@ world.addEventListener("pointermove", (e) => {
     dy = e.clientY - gesture.lastY;
   if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 6)
     gesture.moved = true;
-  const point = view.worldPoint(e.clientX, e.clientY);
+  const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.05 : 1);
   if (gesture.plant) {
     gesture.plant.x = clamp(point.x, -HALF + 0.3, HALF - 0.3);
     view.updatePlant(view.records.get(gesture.plant.id));
@@ -747,10 +780,38 @@ document.addEventListener(
 document.addEventListener(
   "touchmove",
   (e) => {
-    if (!e.target.closest("dialog")) e.preventDefault();
+    if (!e.target.closest("dialog, #toolBin")) e.preventDefault();
   },
   { passive: false },
 );
+let binDrag = null;
+const bin = $("toolBin");
+bin.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "touch")
+    binDrag = { x: e.clientX, left: bin.scrollLeft, moved: false };
+});
+bin.addEventListener("pointermove", (e) => {
+  if (binDrag) {
+    const dx = e.clientX - binDrag.x;
+    if (Math.abs(dx) > 7) binDrag.moved = true;
+    if (binDrag.moved) {
+      bin.scrollLeft = binDrag.left - dx;
+      e.preventDefault();
+    }
+  }
+});
+bin.addEventListener(
+  "click",
+  (e) => {
+    if (binDrag?.moved) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+    binDrag = null;
+  },
+  true,
+);
+bin.addEventListener("pointercancel", () => (binDrag = null));
 $("home").onclick = () => view.plot();
 window.addEventListener("resize", () => view.resize());
 window.addEventListener("keydown", (e) => {
@@ -761,11 +822,6 @@ window.addEventListener("keydown", (e) => {
       e.key === "ArrowLeft" ? 70 : e.key === "ArrowRight" ? -70 : 0,
       e.key === "ArrowUp" ? 70 : e.key === "ArrowDown" ? -70 : 0,
     );
-  }
-  if (e.code === "Space" && [4, 6].includes(state.phase)) {
-    e.preventDefault();
-    state.speed = state.speed ? 0 : 3;
-    updateStats();
   }
 });
 $("restart").onclick = () => {
@@ -784,6 +840,7 @@ $("about").onclick = () =>
     `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. On touch, one tap highlights and records a plant; a second opens its note. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
   );
 function frame(ms) {
+  const cpuStart = performance.now();
   requestAnimationFrame(frame);
   const dt = Math.min(0.06, (ms - lastTime) / 1000 || 0.016);
   lastTime = ms;
@@ -791,7 +848,7 @@ function frame(ms) {
   if (applying && tool) {
     toolAccumulator += dt;
     if (toolAccumulator > 0.1) {
-      const p = view.worldPoint(pointer.x, pointer.y);
+      const p = view.worldPoint(pointer.x, pointer.y, 3.05);
       if (p.y < 2 && p.y > -0.9) applyAt(p.x);
       toolAccumulator = 0;
     }
@@ -826,17 +883,18 @@ function frame(ms) {
   }
   if ([4, 6].includes(state.phase)) {
     simAccumulator += dt * state.speed;
-    while (simAccumulator >= 1) {
+    let steps = 0;
+    while (simAccumulator >= 1 && steps++ < 2) {
       simAccumulator--;
       const review = stepDay(state, (x, y, id) => view.exposure(x, y, id));
       if (state.day % 365 === 274)
         for (const p of state.plants)
           if (p.planted && byId(p.sid).deciduous)
             view.spawn("leaf", p.x, plantHeight(p) * 0.65, 8);
-      if (state.day % 9 === 0) view.sync();
+      if (state.day % 3 === 0) view.sync();
       if (review) {
         state.phase = 5;
-        state.speed = 0;
+        state.speed = 1 / 86400;
         state.review = score(state);
         view.sync();
         updateUI();
@@ -860,18 +918,32 @@ function frame(ms) {
     if (state.phase === 3) updateUI();
     uiTime = 0;
   }
-  if (saveTime > 5) {
+  if (saveTime > 20) {
     save();
     saveTime = 0;
   }
+  const renderStart = performance.now();
   view.render(dt, ms / 1000, tool, pointer, applying);
+  $("world").dataset.renderMs = (performance.now() - renderStart).toFixed(1);
+  const cpu = performance.now() - cpuStart;
+  framePeak = Math.max(framePeak, cpu);
+  frameCount++;
+  if (cpu > 16) framesOver16++;
+  monitorTime += dt;
+  if (monitorTime > 5) {
+    $("world").dataset.worstCpuMs = framePeak.toFixed(1);
+    $("world").dataset.framesOver16 = framesOver16;
+    $("world").dataset.observedFrames = frameCount;
+    framePeak = 0;
+    frameCount = 0;
+    framesOver16 = 0;
+    monitorTime = 0;
+  }
 }
-window.addEventListener("pagehide", save);
+window.addEventListener("pagehide", () => save(true));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    state.speed = 0;
     save();
-    updateStats();
   }
 });
 updateUI();

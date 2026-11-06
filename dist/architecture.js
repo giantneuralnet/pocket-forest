@@ -12,7 +12,10 @@ export function makeArchitecture(sp, seed) {
       angle,
       birth,
       duration: 0.13 + random(seed + serial) * 0.14,
-      width,
+      width:
+        parent >= 0 && depth > 0
+          ? Math.min(width, nodes[parent].width * 0.65)
+          : width,
       depth,
       seed: seed + serial++ * 17,
     };
@@ -20,6 +23,7 @@ export function makeArchitecture(sp, seed) {
     return nodes.length - 1;
   }
   function foliage(index, count = 3) {
+    count = Math.ceil(count * 1.25);
     for (let i = 0; i < count; i++) {
       const s = random(seed + index * 11 + i),
         side = i % 2 ? 1 : -1;
@@ -63,7 +67,7 @@ export function makeArchitecture(sp, seed) {
           0.19 + random(seed + j) * 0.045,
           (random(seed + j * 3) - 0.5) * 0.2,
           j * 0.025,
-          herb ? 0.015 : 0.029 * (1 - j * 0.13),
+          herb ? 0.015 : 0.029 * Math.pow(0.72, j),
           0,
         ),
       );

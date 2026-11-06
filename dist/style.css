@@ -565,3 +565,182 @@ a {
     transition: none !important;
   }
 }
+
+/* Unified blue tool bin. No sky-covering gradient or separate control rows. */
+:root {
+  --ink: #1d3e59;
+  --green: #2873a0;
+  --line: #b4d1e2;
+  --paper: #f2f9fd;
+}
+#topHUD {
+  background: none !important;
+  padding: 18px 16px;
+}
+.phase {
+  padding: 0 8px;
+  max-width: 700px;
+}
+.phase h1 {
+  color: #203e55;
+}
+.phase p {
+  color: #365469;
+}
+#bottomHUD {
+  display: block;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  background: none;
+}
+#toolBin {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  max-width: fit-content;
+  margin: auto;
+  padding: 9px;
+  border: 1px solid #a4c4d7;
+  border-radius: 15px;
+  background: #dbeef8ed;
+  box-shadow: 0 5px 22px #163c5d20;
+  overflow-x: auto;
+  pointer-events: auto;
+  white-space: nowrap;
+  touch-action: pan-x;
+  scrollbar-width: thin;
+}
+#toolBin > * {
+  flex-shrink: 0;
+}
+#actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 7px;
+}
+#actions button {
+  font-size: 12px;
+}
+button {
+  background: #eaf6fd;
+  color: #244d6a;
+  border-color: #a9cadf;
+  box-shadow: none;
+}
+button:hover {
+  background: #c8e7f7;
+}
+.primary,
+.shop-button {
+  background: #2873a0 !important;
+  color: white !important;
+  border-color: #22658b !important;
+}
+.primary:hover,
+.shop-button:hover {
+  background: #3786b4 !important;
+}
+.shop-button {
+  font-size: 13px;
+  min-width: 140px;
+  box-shadow: none;
+}
+.chosen,
+.active-tool {
+  background: #a9d9f2 !important;
+  box-shadow: inset 0 0 0 1px #477fa0;
+}
+.soil-stats {
+  background: none;
+  padding: 0 5px;
+  gap: 12px;
+  font-size: 9px;
+}
+.soil-stats > span {
+  min-width: 72px;
+}
+#weather {
+  display: none;
+}
+#toolBin #money {
+  font:
+    18px Georgia,
+    serif;
+  padding: 0 7px;
+}
+#toolBin #next {
+  min-width: 130px;
+  max-width: unset;
+  font-size: 12px;
+}
+#speeds {
+  display: block;
+}
+select {
+  border: 1px solid #a9cadf;
+  background: #eaf6fd;
+  color: #244d6a;
+  font: 12px system-ui;
+  border-radius: 9px;
+  padding: 10px 8px;
+  min-height: 40px;
+  touch-action: manipulation;
+}
+meter::-webkit-meter-optimum-value {
+  background: #4c91b8;
+}
+#selection {
+  bottom: 100px;
+}
+#toast {
+  top: 175px;
+}
+@media (max-width: 760px) {
+  #topHUD {
+    padding: 13px 12px;
+  }
+  .phase {
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .phase h1 {
+    font-size: 23px;
+  }
+  .phase p {
+    font-size: 11px;
+  }
+  #bottomHUD {
+    padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+  #toolBin {
+    max-width: 100%;
+    border-radius: 12px;
+    padding: 7px;
+    margin: 0;
+    gap: 6px;
+  }
+  #toolBin button {
+    min-height: 37px;
+    padding: 8px 12px;
+  }
+  #toolBin .soil-stats {
+    display: none;
+  }
+  #actions {
+    gap: 6px;
+  }
+  #selection {
+    bottom: 95px;
+  }
+  #toolBin #money {
+    font-size: 16px;
+  }
+  #next {
+    order: initial;
+  }
+  .phase #timeline {
+    max-width: 380px;
+    width: 100%;
+  }
+}

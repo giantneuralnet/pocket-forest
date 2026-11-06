@@ -121,3 +121,9 @@ test("old saves migrate to the fine grid and retain budget and plant identities"
   assert.equal(m.plants[0].sid, "oak");
   assert.equal(m.soil.length, s.soil.length);
 });
+
+test("soil varies in both moisture and nutrients across the bed", () => {
+  const s = freshState();
+  assert.ok(new Set(s.soil.map((c) => Math.round(c.m))).size > 12);
+  assert.ok(new Set(s.soil.map((c) => Math.round(c.n))).size > 12);
+});

@@ -27,21 +27,13 @@
         <div id="timeline" hidden>
           <div><span id="date"></span><span id="remaining"></span></div>
           <progress id="progress" max="1095"></progress>
-          <div id="speeds"></div>
         </div>
-      </div>
-      <div class="pocket">
-        <strong id="money"></strong
-        ><button id="notebook">Notebook <span id="count">0</span></button>
       </div>
     </div>
     <div id="bottomHUD">
-      <div class="utilities">
-        <button id="home">Plot</button
-        ><button id="about" aria-label="About the forest">?</button
-        ><button id="restart" aria-label="Start again">↻</button>
-      </div>
-      <div class="controls">
+      <div id="toolBin" aria-label="Forest tools and controls">
+        <button id="home">Plot</button><strong id="money"></strong
+        ><button id="notebook">Notebook <span id="count">0</span></button>
         <div class="soil-stats">
           <span
             >Moisture <b id="moisture"></b
@@ -52,8 +44,12 @@
           ><span id="weather"></span>
         </div>
         <div id="actions"></div>
+        <label id="speeds" hidden
+          ><select id="timeScale" aria-label="Simulation speed"></select></label
+        ><button id="next" class="primary"></button
+        ><button id="about" aria-label="About the forest">?</button
+        ><button id="restart" aria-label="Start again">↻</button>
       </div>
-      <button id="next" class="primary"></button>
     </div>
     <dialog id="panel">
       <button id="closePanel" class="close" aria-label="Close panel">×</button>
