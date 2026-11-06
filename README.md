@@ -17,9 +17,9 @@ A full-screen, fixed front-elevation browser game inspired by the Miyawaki metho
 
 ## Simulation and rendering
 
-Species-specific leaf shapes are drawn once to cached canvas textures. Instanced leaf planes reuse those stamps; raycasting uses lightweight volumetric proxies around leaf instances to estimate sun exposure and canopy interception of rain. This is a simplified 2.5D canopy model, not a physically exact light transport simulation.
+A seeded parent-linked architecture generates irregular trunks, branches, forks and twigs. Branches unfold and extend continuously with maturity. Every leaf blade starts at a petiole attached to a branch; leaf and wood transforms are updated together in the wind. The same connected architecture is used for mature previews. Species-specific leaf shapes are drawn once to cached canvas textures. Instanced leaf planes reuse those stamps; raycasting uses lightweight volumetric proxies around leaf instances to estimate sun exposure and canopy interception of rain. This is a simplified 2.5D canopy model, not a physically exact light transport simulation.
 
-The wider planting strip has a 64 × 14 soil grid. Each cell tracks moisture, nutrients, drainage, organic matter and biological activity. Surface water infiltrates over real elapsed time, then moves gradually down and sideways. New root tips sample moisture and nutrients. Existing root segments are stored permanently, including across reloads, and never rerouted. The visual segment geometry is rebuilt from those fixed coordinates when new segments arrive.
+The wider planting strip has a 64 × 14 soil grid. Each cell tracks moisture, nutrients, drainage, organic matter and biological activity. Surface water infiltrates over real elapsed time, then moves gradually down and sideways. The plot uses the same brown soil base as the surrounding woodland, with an outline and a faint transparent grid instead of a differently colored inset. New root tips retain a heading, sample several randomized directions, and steer toward moisture and nutrients. Tips fork at varied times and angles. Existing root segments are stored permanently, including across reloads, and never rerouted. The visual segment geometry is rebuilt from those fixed coordinates when new segments arrive.
 
 Partial shade and neighboring plants can benefit establishment through a modest shelter bonus. Deep shade still limits growth, according to each species’ shade tolerance. The model is intended to teach coexistence and competition without claiming every species grows faster in every shade condition.
 
@@ -42,7 +42,7 @@ These targets are game design choices for a strip with compressed planting depth
 
 ## Files and saving
 
-`dist/game.js`: interface and interactions. `dist/forest-view.js`: graphics, leaf stamps, raycasting and animated effects. `dist/ecology.js`: soil, roots, growth and scoring. `dist/species.js`: reference species and educational sources.
+`dist/architecture.js`: seeded branching, progressive growth and leaf attachments. `dist/game.js`: interface and interactions. `dist/forest-view.js`: graphics, leaf stamps, raycasting and animated effects. `dist/ecology.js`: soil, roots, growth and scoring. `dist/species.js`: reference species and educational sources.
 
 Progress is saved locally on the browser/origin. Version-one saves migrate to the wider bed and fine soil grid; the previous save is retained until the player explicitly restarts. Background tabs pause time.
 

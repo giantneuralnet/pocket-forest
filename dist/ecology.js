@@ -138,49 +138,67 @@ export function hydrology(s, dt) {
 export function growRoots(s, p) {
   p.roots ??= [];
   p.tips ??= [];
-  if (!p.tips.length)
+  if (!p.tips.length && p.roots.length === 0)
     p.tips = [
-      { x: p.x, y: -0.035, dir: -1 },
-      { x: p.x, y: -0.035, dir: 1 },
+      { x: p.x, y: -0.035, dir: -1, angle: -0.4, age: 0 },
+      { x: p.x, y: -0.035, dir: 1, angle: 0.4, age: 0 },
     ];
-  if (p.roots.length > 360) return;
-  const next = [];
+  if (p.roots.length >= 720) return;
+  const next = [],
+    forks = [];
   for (let i = 0; i < p.tips.length; i++) {
     const a = p.tips[i];
-    if (a.y <= -DEPTH + 0.1) continue;
-    const step = 0.04 + random(p.seed + s.day + i) * 0.055;
-    const candidates = [-0.65, 0, 0.65]
-      .map((d) => {
-        const x = clamp(
-            a.x + d * step + a.dir * step * 0.3,
-            -HALF + 0.02,
-            HALF - 0.02,
+    if (a.y <= -DEPTH + 0.08) continue;
+    const key = p.seed * 101 + s.day * 13 + i * 37,
+      step = 0.045 + random(key) * 0.07,
+      heading = a.angle ?? a.dir * 0.4;
+    const candidates = [-0.6, -0.3, 0, 0.3, 0.6]
+      .map((turn, j) => {
+        const angle = clamp(
+            heading * 0.65 + turn + (random(key + j * 11) - 0.5) * 0.22,
+            -1.28,
+            1.28,
           ),
-          y = a.y - step;
+          x = clamp(a.x + Math.sin(angle) * step, -HALF + 0.02, HALF - 0.02),
+          y = a.y - Math.cos(angle) * step;
         return {
           x,
           y,
+          angle,
           score:
-            cellAt(s, x, y).m +
-            cellAt(s, x, y).n * 0.08 +
-            random(p.seed + i + s.day + d) * 2,
+            cellAt(s, x, y).m * 0.8 +
+            cellAt(s, x, y).n * 0.06 +
+            random(key + j * 7) * 4 -
+            Math.abs(angle - heading) * 1.5,
         };
       })
       .sort((a, b) => b.score - a.score);
     const b = candidates[0];
     p.roots.push({ a: [a.x, a.y], b: [b.x, b.y], born: s.day });
-    next.push({ x: b.x, y: b.y, dir: a.dir });
-    if (s.day % 29 === 0 && next.length < 8) {
-      const branch = {
-        x: clamp(b.x + a.dir * 0.13, -HALF, HALF),
-        y: b.y - 0.03,
-        dir: -a.dir,
-      };
-      p.roots.push({ a: [b.x, b.y], b: [branch.x, branch.y], born: s.day });
-      next.push(branch);
+    const tip = {
+      x: b.x,
+      y: b.y,
+      angle: b.angle,
+      dir: b.angle < 0 ? -1 : 1,
+      age: (a.age || 0) + 1,
+    };
+    next.push(tip);
+    if (
+      tip.age > 4 &&
+      random(key + 97) < 0.16 &&
+      next.length + forks.length < 10
+    ) {
+      const turn =
+        (random(key + 5) < 0.5 ? -1 : 1) * (0.5 + random(key + 31) * 0.45);
+      forks.push({
+        ...tip,
+        angle: clamp(b.angle + turn, -1.28, 1.28),
+        dir: turn < 0 ? -1 : 1,
+        age: 0,
+      });
     }
   }
-  p.tips = next;
+  p.tips = [...next, ...forks].slice(0, 10);
 }
 export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   s.day++;

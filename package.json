@@ -1,12 +1,12 @@
 {
   "name": "tokushima-pocket-forest",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A cross-section Miyawaki forest learning game",
   "license": "MIT",
   "scripts": {
-    "check": "node --check dist/game.js && node --check dist/ecology.js && node --check dist/forest-view.js && node --check dist/species.js",
+    "check": "node --check dist/game.js && node --check dist/ecology.js && node --check dist/forest-view.js && node --check dist/species.js && node --check dist/architecture.js",
     "start": "python3 -m http.server 8000 --directory dist",
     "test": "node --test tests/*.test.js"
   }

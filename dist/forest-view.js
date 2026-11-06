@@ -1,3 +1,8 @@
+import {
+  makeArchitecture,
+  poseArchitecture,
+  leafAttachment,
+} from "./architecture.js";
 import * as T from "./vendor/three.module.js";
 import { species } from "./species.js";
 import {
@@ -14,7 +19,7 @@ import {
   colAt,
 } from "./ecology.js";
 const boxGeometry = new T.BoxGeometry(1, 1, 1),
-  leafGeometry = new T.PlaneGeometry(1, 1),
+  leafGeometry = new T.PlaneGeometry(1, 1).translate(0, 0.5, 0),
   materialCache = new Map(),
   leafStamps = new Map();
 const material = (color, opacity = 1) => {
@@ -105,7 +110,7 @@ function stamp(sp) {
   c.strokeStyle = "#9db58a";
   c.lineWidth = 2;
   c.beginPath();
-  c.moveTo(64, 121);
+  c.moveTo(64, 127);
   c.lineTo(64, 13);
   c.stroke();
   if (sp.id === "cinnamon") {
@@ -169,7 +174,7 @@ export class ForestView {
     this.ground = new T.Group();
     this.scene.add(this.ground);
     box(this.ground, 0, -60, -1, 180, 120, 6, 0x765034);
-    box(this.ground, 0, -0.55, -1, 180, 1, 6, 0x8c5f3a);
+
     box(this.ground, 0, -0.045, -1, 180, 0.09, 6, 0x5f462c);
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
     const offsets = [12, 15.6, 19.5, 23, 27.5, 31, 35, 39, 44, 49, 55];
@@ -247,7 +252,12 @@ export class ForestView {
     }
     this.soilMesh = new T.InstancedMesh(
       boxGeometry,
-      new T.MeshLambertMaterial({ color: 0xffffff }),
+      new T.MeshBasicMaterial({
+        color: 0x5a3d29,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.16,
+      }),
       COLS * ROWS,
     );
     this.scene.add(this.soilMesh);
@@ -276,6 +286,18 @@ export class ForestView {
       COLS,
     );
     this.scene.add(this.waterMesh);
+    box(this.scene, 0, -DEPTH, 3.25, HALF * 2, 0.035, 0.025, 0x9b8258);
+    for (const side of [-1, 1])
+      box(
+        this.scene,
+        side * HALF,
+        -DEPTH / 2,
+        3.25,
+        0.035,
+        DEPTH,
+        0.025,
+        0x9b8258,
+      );
     this.makeFarmer();
     this.makeTools();
     this.makeFauna();
@@ -363,84 +385,16 @@ export class ForestView {
       height: 0,
       rootMesh: null,
     };
-    const isHerb =
-        sp.type === "weed" || sp.id === "four" || sp.id === "ardisia",
-      isFern = sp.type === "fern";
-    const trunk = branch(
-      g,
-      0,
-      0,
-      0,
-      isHerb ? 0.65 : 0.78,
-      isHerb ? 0.022 : 0.029,
-      sp.type === "weed" ? 0x69834a : 0x6c4a2e,
+    record.recipe = makeArchitecture(sp, p.seed);
+    const data = record.recipe.leaves;
+    record.wood = new T.InstancedMesh(
+      boxGeometry,
+      material(sp.type === "weed" ? 0x688348 : 0x725033),
+      record.recipe.nodes.length + data.length,
     );
-    trunk.userData.pid = p.id;
-    this.pickables.push(trunk);
-    const data = [];
-    for (let j = 0; j < (isFern ? 8 : 10); j++) {
-      const sign = j % 2 ? 1 : -1,
-        t = j / 10;
-      const startY = isFern ? 0.03 : 0.15 + t * 0.5,
-        ex =
-          sign *
-          (isFern ? 0.46 : sp.layer === 0 ? 0.35 : 0.32) *
-          (1 - t * 0.55),
-        ey = isFern ? 0.3 + Math.sin(t * Math.PI) * 0.45 : 0.45 + t * 0.52;
-      const hinge = new T.Group();
-      hinge.position.set(0, startY, 0);
-      g.add(hinge);
-      const branchMesh = branch(
-        hinge,
-        0,
-        0,
-        ex,
-        ey - startY,
-        0.009,
-        sp.type === "weed" ? 0x688348 : 0x786039,
-      );
-      branchMesh.userData.pid = p.id;
-      this.pickables.push(branchMesh);
-      record.branches.push({ hinge, seed: j * 9 + p.seed });
-      for (let k = 0; k < 8; k++) {
-        const f = 0.25 + k * 0.1;
-        const px = ex * f,
-          py = startY + (ey - startY) * f;
-        data.push({
-          x: px,
-          y: py,
-          z: 0.18 + random(j + k) * 0.06,
-          r: isFern ? sign * 0.9 : sign * (0.7 + random(k) * 0.6),
-          size: 1,
-          k,
-          j,
-        });
-        if (!isFern && k > 2)
-          data.push({
-            x: px + sign * 0.055,
-            y: py + 0.03,
-            z: 0.24,
-            r: -sign * 0.6,
-            size: 0.75,
-            k,
-            j,
-          });
-      }
-    }
-    if (!isHerb && !isFern)
-      for (let i = 0; i < 95; i++) {
-        const y = 0.48 + random(i + p.seed) * 0.51,
-          w = 0.34 * (1 - (y - 0.48) * 1.2);
-        data.push({
-          x: (random(i * 3 + p.seed) - 0.5) * w * 2,
-          y,
-          z: 0.3 + random(i) * 0.1,
-          r: random(i) * 5,
-          size: 0.8 + random(i) * 0.5,
-          j: 5,
-          k: 4,
-        });
-      }
+    record.wood.userData.pid = p.id;
+    g.add(record.wood);
+    this.pickables.push(record.wood);
     const st = stamp(sp),
       leafMat = new T.MeshLambertMaterial({
         color: sp.color,
@@ -496,39 +450,13 @@ export class ForestView {
     rec.height = h;
     group.position.set(p.x, p.planted ? 0 : p.drop || 0, p.z ?? 1);
     rec.pot.visible = !p.planted;
-    const broad = sp.type === "fern" ? 1 : 1;
-    g.scale.set(h * broad, h, 1);
-    rec.trunkScale = h;
-    const dummy = new T.Object3D();
-    let count = 0;
-    const winter =
+    g.scale.set(h, h, 1);
+    rec.maturity = p.wild ? 1.5 : 0.12 + 0.88 * Math.sqrt(clamp(h / sp.height));
+    rec.winter =
       sp.deciduous &&
       p.age > 1 &&
       Math.floor((this.state.day % 365) / 91.25) === 3;
-    for (let i = 0; i < rec.data.length; i++) {
-      const l = rec.data[i];
-      if (health <= 0 || winter || (h < 1.3 && (l.j > 5 || l.k > 4))) continue;
-      dummy.position.set(l.x, l.y - (health < 35 ? 0.035 : 0), l.z);
-      dummy.rotation.set(0, 0, l.r + (health < 35 ? 0.4 : 0));
-      const size =
-        clamp(0.42 / h, 0.025, 0.25) * (sp.leaf === "small" ? 0.7 : 1) * l.size;
-      dummy.scale.set(
-        size * (sp.leaf === "long" ? 0.7 : 1),
-        size * (sp.leaf === "long" ? 1.5 : 1.1),
-        1,
-      );
-      dummy.updateMatrix();
-      leaves.setMatrixAt(count, dummy.matrix);
-      dummy.scale.z = 6;
-      dummy.updateMatrix();
-      rec.proxy.setMatrixAt(count++, dummy.matrix);
-    }
-    rec.proxy.count = count;
-    rec.proxy.instanceMatrix.needsUpdate = true;
-    rec.proxy.computeBoundingSphere();
-    leaves.count = count;
-    leaves.instanceMatrix.needsUpdate = true;
-    leaves.computeBoundingSphere();
+    this.posePlant(rec, this.time || 0);
     let color = new T.Color(sp.color);
     if (health < 65) color.lerp(new T.Color(0xb8a454), (65 - health) / 65);
     if (sp.deciduous && Math.floor((this.state.day % 365) / 91.25) === 2)
@@ -548,6 +476,81 @@ export class ForestView {
       rec.sunLean = (rec.sunLean || 0) * 0.96 + (right - left) * 0.005;
     }
     this.updateRoots(rec);
+  }
+  posePlant(rec, time) {
+    const { p, sp, leaves, wood } = rec,
+      pose = poseArchitecture(rec.recipe, rec.maturity, time),
+      dummy = new T.Object3D();
+    const maxY = Math.max(0.01, ...pose.map((n) => n.b.y)),
+      scale = 1 / maxY;
+    let woodCount = 0,
+      leafCount = 0;
+    const drawSegment = (a, b, width) => {
+      const dx = (b.x - a.x) * scale,
+        dy = (b.y - a.y) * scale;
+      if (Math.hypot(dx, dy) < 0.00001) return;
+      dummy.position.set(
+        (a.x + b.x) * 0.5 * scale,
+        (a.y + b.y) * 0.5 * scale,
+        0.02,
+      );
+      dummy.rotation.set(0, 0, -Math.atan2(dx, dy));
+      dummy.scale.set(width, Math.hypot(dx, dy), width);
+      dummy.updateMatrix();
+      wood.setMatrixAt(woodCount++, dummy.matrix);
+    };
+    pose.forEach((n, i) => drawSegment(n.a, n.b, rec.recipe.nodes[i].width));
+    for (const l of rec.data) {
+      const segment = pose[l.branch];
+      if (
+        segment.growth < 0.18 ||
+        rec.maturity < l.birth ||
+        p.health <= 0 ||
+        rec.winter
+      )
+        continue;
+      const attachment = leafAttachment(l, pose, p.health);
+      drawSegment(attachment.base, attachment.tip, 0.0025);
+      const size =
+        clamp(0.43 / Math.max(0.1, rec.height), 0.024, 0.24) *
+        (sp.leaf === "small" ? 0.72 : 1) *
+        l.size *
+        clamp((segment.growth - 0.15) / 0.85);
+      dummy.position.set(
+        attachment.tip.x * scale,
+        attachment.tip.y * scale,
+        0.02,
+      );
+      dummy.rotation.set(0, 0, -attachment.angle);
+      dummy.scale.set(
+        size * (sp.leaf === "long" ? 0.7 : 1),
+        size * (sp.leaf === "long" ? 1.5 : 1.1),
+        1,
+      );
+      dummy.updateMatrix();
+      leaves.setMatrixAt(leafCount, dummy.matrix);
+      // Box proxies are centered halfway along the blade, using the same attachment.
+      const bladeHeight = dummy.scale.y;
+      dummy.position.x += Math.sin(attachment.angle) * bladeHeight * 0.5;
+      dummy.position.y += Math.cos(attachment.angle) * bladeHeight * 0.5;
+      dummy.scale.z = 6;
+      dummy.updateMatrix();
+      rec.proxy.setMatrixAt(leafCount++, dummy.matrix);
+    }
+    wood.count = woodCount;
+    wood.instanceMatrix.needsUpdate = true;
+    wood.computeBoundingSphere();
+    leaves.count = leafCount;
+    leaves.instanceMatrix.needsUpdate = true;
+    leaves.computeBoundingSphere();
+    rec.proxy.count = leafCount;
+    rec.proxy.instanceMatrix.needsUpdate = true;
+    rec.proxy.computeBoundingSphere();
+    rec.flowers.forEach((f, i) => {
+      const branch = pose[Math.max(0, pose.length - 1 - i * 3)];
+      f.position.set(branch.b.x * scale, branch.b.y * scale, 0.15);
+    });
+    rec.poseTime = time;
   }
   updateRoots(rec) {
     const segments = rec.p.roots || [];
@@ -588,6 +591,7 @@ export class ForestView {
           this.scene.remove(r.rootMesh);
           r.rootMesh.geometry.dispose();
         }
+        r.wood.dispose();
         r.leaves.dispose();
         r.leaves.material.dispose();
         r.proxy.dispose();
@@ -609,17 +613,6 @@ export class ForestView {
   }
   updateSoil() {
     const dummy = new T.Object3D();
-    for (let i = 0; i < this.state.soil.length; i++) {
-      const c = this.state.soil[i],
-        r = Math.floor(i / COLS),
-        base = new T.Color().setHSL(
-          0.075,
-          0.35,
-          clamp(0.32 - r * 0.006 - c.m * 0.001, 0.17, 0.34),
-        );
-      this.soilMesh.setColorAt(i, base);
-    }
-    this.soilMesh.instanceColor.needsUpdate = true;
     let count = 0;
     for (let c = 0; c < COLS; c++) {
       const x = -HALF + (c + 0.5) * CW,
@@ -670,32 +663,52 @@ export class ForestView {
     }
   }
   updateGhosts() {
+    const key =
+      this.selected && this.state.phase === 2
+        ? this.state.plants.map((p) => p.id).join("|")
+        : "";
+    if (key && this.ghostGroup && this.ghostKey === key) {
+      for (const g of this.ghostGroup.children) {
+        const p = this.state.plants.find((p) => p.id === g.userData.pid);
+        if (p) g.position.x = p.x;
+      }
+      return;
+    }
     if (this.ghostGroup) {
       this.scene.remove(this.ghostGroup);
       this.ghostGroup.traverse((o) => {
         if (o.isInstancedMesh) o.dispose();
+        if (o.isLineSegments) o.geometry.dispose();
         if (o.material) o.material.dispose();
       });
     }
     this.ghostGroup = null;
-    if (!this.selected || this.state.phase !== 2) return;
+    this.ghostKey = key;
+    if (!key) return;
     const group = new T.Group();
     this.scene.add(group);
     this.ghostGroup = group;
     for (const p of this.state.plants) {
       const sp = getSpecies(p.sid),
         h = sp.height,
+        recipe = makeArchitecture(sp, p.seed),
+        pose = poseArchitecture(recipe, 1.5),
+        scale = h / Math.max(...pose.map((n) => n.b.y)),
         g = new T.Group();
       g.position.set(p.x, 0, -0.6);
+      g.userData.pid = p.id;
       group.add(g);
-      const stem = branch(g, 0, 0, 0, h * 0.8, 0.06, 0x8b9a6f);
-      stem.material = new T.MeshBasicMaterial({
-        color: 0x446c43,
-        transparent: true,
-        opacity: 0.15,
-        depthWrite: false,
-      });
-      const mesh = new T.InstancedMesh(
+      const points = [];
+      for (const n of pose)
+        points.push(
+          n.a.x * scale,
+          n.a.y * scale,
+          0,
+          n.b.x * scale,
+          n.b.y * scale,
+          0,
+        );
+      const leaves = new T.InstancedMesh(
           leafGeometry,
           new T.MeshBasicMaterial({
             color: sp.color,
@@ -706,22 +719,42 @@ export class ForestView {
             side: T.DoubleSide,
             depthWrite: false,
           }),
-          80,
+          recipe.leaves.length,
         ),
         d = new T.Object3D();
-      for (let i = 0; i < 80; i++) {
-        const y = 0.45 + random(i + p.seed) * 0.55;
-        d.position.set(
-          (random(i * 3 + p.seed) - 0.5) * h * 0.55 * (1 - (y - 0.4) * 0.7),
-          h * y,
-          0.1,
+      recipe.leaves.forEach((l, i) => {
+        const a = leafAttachment(l, pose);
+        points.push(
+          a.base.x * scale,
+          a.base.y * scale,
+          0.02,
+          a.tip.x * scale,
+          a.tip.y * scale,
+          0.02,
         );
-        d.rotation.z = random(i) * 6;
-        d.scale.set(0.45, 0.7, 1);
+        d.position.set(a.tip.x * scale, a.tip.y * scale, 0.02);
+        d.rotation.z = -a.angle;
+        d.scale.set(0.32 * l.size, 0.45 * l.size, 1);
         d.updateMatrix();
-        mesh.setMatrixAt(i, d.matrix);
-      }
-      g.add(mesh);
+        leaves.setMatrixAt(i, d.matrix);
+      });
+      const geometry = new T.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new T.Float32BufferAttribute(points, 3),
+      );
+      g.add(
+        new T.LineSegments(
+          geometry,
+          new T.LineBasicMaterial({
+            color: 0x456243,
+            transparent: true,
+            opacity: 0.2,
+            depthWrite: false,
+          }),
+        ),
+        leaves,
+      );
     }
   }
   alphaHit(hit) {
@@ -755,11 +788,15 @@ export class ForestView {
     const hits = this.ray.intersectObjects(candidates, false);
     const hit = hits.find((h) => this.alphaHit(h));
     if (hit) return this.records.get(hit.object.userData.pid)?.p;
-    let closest = null, distance = tolerance;
+    let closest = null,
+      distance = tolerance;
     for (const rec of this.records.values()) {
-      const point = this.project(rec.p.x, Math.min(rec.height * .5, .6));
+      const point = this.project(rec.p.x, Math.min(rec.height * 0.5, 0.6));
       const d = Math.hypot(point.x - x, point.y - y);
-      if (d < distance) { closest = rec.p; distance = d; }
+      if (d < distance) {
+        closest = rec.p;
+        distance = d;
+      }
     }
     return closest;
   }
@@ -966,8 +1003,7 @@ export class ForestView {
     for (const r of this.records.values()) {
       r.g.rotation.z =
         -(r.sunLean || 0) + Math.sin(time * 0.8 + r.p.seed) * 0.007;
-      for (const b of r.branches)
-        b.hinge.rotation.z = Math.sin(time + b.seed) * 0.009;
+      if (time - (r.poseTime || 0) > 0.09) this.posePlant(r, time);
       if (!r.p.planted && (r.p.drop || 0) > 0) {
         r.p.drop = Math.max(0, r.p.drop - dt * 8);
         r.group.position.y = r.p.drop;
