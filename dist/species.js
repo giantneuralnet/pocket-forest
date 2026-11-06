@@ -186,3 +186,73 @@ export const sources = [
     "https://www.af-info.or.jp/blueplanet/assets/pdf/list/2006essay-miyawaki.pdf",
   ],
 ];
+
+// Ground-layer references and surveyable weeds. Unidentified weeds stay unidentified.
+species.push(
+  {
+    id: "fern",
+    name: "Holly fern",
+    jp: "ヤブソテツの仲間",
+    latin: "Cyrtomium cf. falcatum",
+    layer: 0,
+    height: 0.8,
+    color: 0x28764a,
+    native: true,
+    price: 120,
+    shade: 0.92,
+    water: 66,
+    leaf: "fern",
+    type: "fern",
+    photo: 1,
+    confidence:
+      "Photo 1: likely a holly fern; species identification is tentative.",
+    desc: "Arching fronds carry glossy, angular leaflets. A woodland ground-layer reference; ferns reproduce by spores rather than flowers.",
+  },
+  {
+    id: "grass",
+    name: "Southern crabgrass",
+    jp: "メヒシバ",
+    latin: "Digitaria ciliaris",
+    layer: 0,
+    height: 0.65,
+    color: 0x7a9c3d,
+    native: null,
+    price: 0,
+    shade: 0.2,
+    water: 48,
+    leaf: "grass",
+    type: "weed",
+    confidence:
+      "Additional weed reference recorded in Tokushima flora; not identified from the supplied photos. Native status is not assigned here.",
+    desc: "A spreading annual grass competing with seedlings for moisture, nutrients and light. Pluck it and leave it to decompose on the surface.",
+  },
+  {
+    id: "forb",
+    name: "Horseweed",
+    jp: "ヒメムカシヨモギ",
+    latin: "Erigeron canadensis",
+    layer: 0,
+    height: 0.45,
+    color: 0x6d9d43,
+    native: false,
+    price: 0,
+    shade: 0.35,
+    water: 55,
+    leaf: "round",
+    type: "weed",
+    confidence:
+      "Additional introduced weed reference; not a species identification from the supplied photos.",
+    desc: "An introduced herb growing in open soil. Its roots consume water and nutrients; cut vegetation can return nutrients as it decomposes.",
+  },
+);
+
+sources.push(
+  [
+    "Tokushima flora · Southern crabgrass",
+    "https://library.bunmori.tokushima.jp/digital/webkiyou/32/3204.html",
+  ],
+  [
+    "Horseweed · NIES",
+    "https://www.nies.go.jp/biodiversity/invasive/DB/detail/80510.html",
+  ],
+);
