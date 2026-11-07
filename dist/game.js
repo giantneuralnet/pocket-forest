@@ -2,15 +2,16 @@ import { returnLeafToSoil, returnWeedToSoil, prepareSoilAt } from "./ecology.js"
 import { layers } from "./species.js";
 import {
   HALF,
+  PLOT_FIRST,
+  PLOT_END,
   COLS,
-  ROWS,
-  CW,
+  soilX,
   clamp,
   random,
   getSpecies,
   colAt,
   freshState,
-  migrate,
+  loadState,
   plantHeight,
   plantSoilCells,
   hydrology,
@@ -24,16 +25,12 @@ import { ForestView } from "./forest-view.js";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
-let state = freshState();
+let state;
 try {
-  const raw = localStorage.getItem("pocket-forest-v2");
-  if (raw) state = migrate(JSON.parse(raw));
-  else {
-    const old = JSON.parse(localStorage.getItem("pocket-forest-v1"));
-    if (old?.state) state = migrate(old.state);
-  }
-} catch {}
-state.watered ??= Array(COLS).fill(state.phase >= 4);
+  state = loadState(JSON.parse(localStorage.getItem("pocket-forest-v2")));
+} catch {
+  state = freshState();
+}
 let view;
 try {
   view = new ForestView($("scene"), state);
@@ -75,6 +72,7 @@ let tool = null,
   simAccumulator = 0,
   lastTime = 0,
   soilTime = 0,
+  waterTime = 0,
   uiTime = 0,
   saveTime = 0,
   resetting = false,
@@ -432,7 +430,8 @@ function updateUI() {
     n.disabled = surveyed < 5;
   }
   if (p === 1) {
-    action(`${state.prep[0] ? "✓ " : ""}Drainage`, () => setTool("drainage"), tool === "drainage" ? "active-tool" : "");
+    action(`${state.prep[0] ? "✓ " : ""}Drainage`, () => setTool("drainage"), tool === "drainage" ? "active-tool" : "").title =
+      "Loosen soil so water moves down through it faster.";
     action(`${state.prep[1] && state.prep[2] ? "✓ " : ""}Compost`, () => setTool("compost"), tool === "compost" ? "active-tool" : "");
     n.title = "Next · Buy & plant";
   }
@@ -474,7 +473,8 @@ function updateUI() {
 function updateStats() {
   $("money").textContent = "¥" + state.budget.toLocaleString();
   if (state.phase === 4 || state.phase === 6) {
-    const surface = state.soil.slice(0, COLS * 3);
+    const surface = [0, 1, 2].flatMap(row =>
+      state.soil.slice(row * COLS + PLOT_FIRST, row * COLS + PLOT_END));
     const rootZoneMoisture = surface.reduce((sum, cell) => sum + cell.m, 0) / surface.length;
     const rootZoneNutrients = surface.reduce((sum, cell) => sum + cell.n, 0) / surface.length;
     const advice = [];
@@ -959,7 +959,12 @@ function frame(ms) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.06, (ms - lastTime) / 1000 || 0.016);
   lastTime = ms;
-  hydrology(state, dt);
+  waterTime += dt;
+  const waterInterval = Math.min(0.075, 0.6 / Math.max(1, state.speed));
+  if (waterTime >= waterInterval) {
+    hydrology(state, waterTime);
+    waterTime = 0;
+  }
   if (applying && tool && tool !== "drainage" && ms >= nextToolAt) {
     applyAt(view.worldPoint(pointer.x, pointer.y));
   }
@@ -970,8 +975,7 @@ function frame(ms) {
       c <= Math.min(COLS - 1, colAt(x) + 1);
       c++
     ) {
-      state.watered[c] = true;
-      if (c !== colAt(x)) addWater(state, -HALF + (c + 0.5) * CW, 1.4);
+      if (c !== colAt(x)) addWater(state, soilX(c), 1.4);
     }
   }
   for (const x of view.pendingMulch.splice(0)) {

@@ -1,10 +1,15 @@
 import { species } from "./species.js";
 export const HALF = 20 / 3,
-  COLS = 64,
-  ROWS = 14,
-  DEPTH = 4.8,
-  CW = (HALF * 2) / COLS,
-  CH = DEPTH / ROWS;
+  PLOT_COLS = 40,
+  COLS = PLOT_COLS * 5,
+  ROWS = 10,
+  CW = (HALF * 2) / PLOT_COLS,
+  CH = CW,
+  DEPTH = ROWS * CH,
+  MAP_HALF = COLS * CW / 2,
+  PLOT_FIRST = (COLS - PLOT_COLS) / 2,
+  PLOT_END = PLOT_FIRST + PLOT_COLS;
+export const soilX = col => (col + 0.5 - COLS / 2) * CW;
 export const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, n));
 export const random = (n) => {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
@@ -40,29 +45,21 @@ export function soilBaseline(x, y, seed = 0) {
   const cy = (Math.floor(-y / CH) + 0.5) * CH;
   const patch = (a, b, salt) =>
     perlin(a * 0.8, b * 0.8, salt) + 0.28 * perlin(a * 1.9, b * 1.9, salt + 500);
+  const depth = clamp(cy / DEPTH);
   return {
-    m: clamp(47 + 40 * patch(cx + 0.21, cy, seed), 18, 82),
-    n: clamp(43 + 60 * patch(cx, cy + 0.37, seed + 1501), 10, 85),
-    d: 0.15,
+    m: clamp(38 + 22 * depth + 30 * patch(cx + 0.21, cy, seed), 18, 87),
+    n: clamp(31 + 27 * depth + 43 * patch(cx, cy + 0.37, seed + 1501), 10, 88),
+    d: 0.48 - 0.34 * depth,
     o: 0,
     c: 0,
     mulch: 0,
     litter: 0,
   };
 }
-export function sampleSoil(s, x, y = 0, create = false) {
-  const col = Math.floor((x + HALF) / CW),
-    row = Math.floor(-y / CH);
-  if (col >= 0 && col < COLS && row >= 0 && row < ROWS)
-    return s.soil[row * COLS + col];
-  const key = Math.floor(x / CW) + ":" + row;
-  if (s.extraSoil?.[key]) return s.extraSoil[key];
-  const cell = soilBaseline(x, y, s.soilSeed);
-  if (create) {
-    s.extraSoil ??= {};
-    s.extraSoil[key] = cell;
-  }
-  return cell;
+export const colAt = x => clamp(Math.floor(x / CW + COLS / 2), 0, COLS - 1);
+export function sampleSoil(state, x, y = 0) {
+  const row = clamp(Math.floor(-y / CH), 0, ROWS - 1);
+  return state.soil[row * COLS + colAt(x)];
 }
 export function soilColorHSL(cell) {
   const nutrients = clamp(cell.n / 100);
@@ -81,10 +78,9 @@ export function rootThickness(segment) {
 }
 export function freshState(soilSeed = Math.floor(Math.random() * 1e7)) {
   return {
-    version: 2,
+    version: 3,
     phase: 0,
     budget: 18000,
-    plotWidth: HALF * 2,
     reachedPhase: 0,
     survey: [],
     surveyPlants: [],
@@ -98,21 +94,9 @@ export function freshState(soilSeed = Math.floor(Math.random() * 1e7)) {
     warned: {},
     review: null,
     weedDays: 0,
-    soilVariation: 1,
     soilSeed,
-    extraSoil: {},
-    soil: Array.from({ length: COLS * ROWS }, (_, i) => ({
-      ...soilBaseline(
-        -HALF + ((i % COLS) + 0.5) * CW,
-        -(Math.floor(i / COLS) + 0.5) * CH,
-        soilSeed,
-      ),
-      d: 0.15,
-      o: 0,
-      c: 0,
-      mulch: 0,
-      litter: 0,
-    })),
+    soil: Array.from({ length: COLS * ROWS }, (_, i) =>
+      soilBaseline(soilX(i % COLS), -(Math.floor(i / COLS) + 0.5) * CH, soilSeed)),
     surface: Array(COLS).fill(0),
   };
 }
@@ -137,100 +121,26 @@ export function packState(state) {
     weeds: state.weeds.map(compact),
   });
 }
-export function migrate(saved) {
-  if (saved?.storageFormat === 1) {
-    for (const p of [...saved.plants, ...saved.weeds])
-      p.roots = (p.roots || []).map((a) =>
-        Array.isArray(a)
-          ? {
-              a: [a[0], a[1]],
-              b: [a[2], a[3]],
-              born: a[4],
-              ...(a[5] > 0 ? { radiusA: a[5], radiusB: a[6] } : {}),
-              originX: a[7] ?? p.x,
-            }
-          : a,
-      );
-  }
-
-  if (saved?.version === 2 && saved.soil?.length === COLS * ROWS) {
-    if (!TIME_RATES.some((r) => r.value === saved.speed)) saved.speed = 1;
-    if (!saved.soilVariation) {
-      saved.soil.forEach((cell, i) => {
-        const base = soilBaseline(
-          -HALF + ((i % COLS) + 0.5) * CW,
-          -(Math.floor(i / COLS) + 0.5) * CH,
-        );
-        cell.m = clamp(cell.m + (base.m - 50) * 0.4, 0, 100);
-        cell.n = clamp(cell.n + (base.n - 45) * 0.6, 0, 100);
-      });
-      saved.soilVariation = 1;
+export function loadState(saved) {
+  if (saved?.version !== 3 || saved.soil?.length !== COLS * ROWS) return freshState();
+  if (saved.storageFormat === 1) {
+    for (const plant of [...saved.plants, ...saved.weeds]) {
+      plant.roots = (plant.roots ?? []).map(([ax, ay, bx, by, born, radiusA, radiusB]) => ({
+        a: [ax, ay],
+        b: [bx, by],
+        born,
+        ...(radiusA > 0 ? { radiusA, radiusB } : {}),
+        originX: plant.x,
+      }));
     }
-    saved.extraSoil ??= {};
-    saved.worms ??= [];
-    const ratio = (HALF * 2) / (saved.plotWidth ?? 20);
-    if (ratio !== 1) {
-      for (const p of [...saved.plants, ...saved.weeds]) {
-        p.x *= ratio;
-        for (const root of p.roots || []) {
-          root.a[0] *= ratio;
-          root.b[0] *= ratio;
-          if (root.originX != null) root.originX *= ratio;
-        }
-        for (const tip of p.tips || []) tip.x *= ratio;
-      }
-      for (const mushroom of saved.mushrooms || []) mushroom.x *= ratio;
-    }
-    saved.plotWidth = HALF * 2;
-    saved.reachedPhase ??= saved.phase;
-    return saved;
+    delete saved.storageFormat;
   }
-  const s = freshState();
-  if (!saved?.soil) return s;
-  for (const key of [
-    "phase",
-    "budget",
-    "survey",
-    "plants",
-    "weeds",
-    "day",
-    "prep",
-    "warned",
-  ])
-    if (saved[key] != null) s[key] = saved[key];
-  s.plants.forEach((p) => {
-    p.x = (p.x / 6) * HALF;
-    p.roots = [];
-    p.tips = [];
-  });
-  s.weeds.forEach((w, i) =>
-    Object.assign(w, {
-      sid: i % 2 ? "grass" : "forb",
-      age: 0,
-      health: 100,
-      biomass: 0.2,
-      roots: [],
-      tips: [],
-      seed: i + 90,
-      planted: true,
-    }),
-  );
-  s.soil.forEach((cell, i) =>
-    Object.assign(
-      cell,
-      saved.soil[Math.min(23, Math.floor(((i % COLS) / COLS) * 24))],
-      { m: saved.soil[Math.min(23, Math.floor(((i % COLS) / COLS) * 24))].m },
-    ),
-  );
-  s.reachedPhase = s.phase;
-  if (s.phase === 5 || s.phase === 6) s.review = score(s);
-  return s;
+  return saved;
 }
-export const colAt = (x) => clamp(Math.floor((x + HALF) / CW), 0, COLS - 1);
-export const cellAt = (s, x, y = 0) => sampleSoil(s, x, y, true);
-export function plantSoilCells(state, plant, create = false) {
+export const cellAt = sampleSoil;
+export function plantSoilCells(state, plant) {
   const roots = plant.tips?.length ? plant.tips : [{ x: plant.x, y: -0.08 }];
-  return [...new Set(roots.map(tip => sampleSoil(state, tip.x, tip.y, create)))];
+  return [...new Set(roots.map(tip => sampleSoil(state, tip.x, tip.y)))];
 }
 export const plantHeight = (p) => {
   const sp = getSpecies(p.sid);
@@ -287,6 +197,8 @@ export function hydrology(s, dt) {
             Math.max(0, a.m - below.m + 5) * diffusion * 0.30 * (0.3 + a.d);
         transfer[i] -= f;
         transfer[i + COLS] += f;
+      } else {
+        transfer[i] -= Math.max(0, a.m - 72) * a.d * diffusion * 0.025;
       }
       if (c < COLS - 1) {
         const f = (a.m - s.soil[i + 1].m) * diffusion * 0.095;
@@ -309,34 +221,35 @@ export function growRoots(s, p) {
     forks = [];
   for (let i = 0; i < p.tips.length; i++) {
     const a = p.tips[i];
-    if (a.y <= -11.8) continue;
+    const atBedrock = a.y <= -DEPTH + 0.01;
     const key = p.seed * 101 + s.day * 13 + i * 37,
       step =
         (0.12 + random(key) * 0.17) * (0.15 + 0.85 / (1 + (p.age || 0) * 0.9)),
       heading = a.angle ?? a.dir * 0.2;
     const limit = !p.roots.length || (a.age === 0 && a.y >= -0.04) ? 0.46 : 1.49;
-    const candidates = [-0.6, -0.3, 0, 0.3, 0.6]
-      .map((turn, j) => {
-        const angle = clamp(
+    const turns = atBedrock ? [-Math.PI / 2, Math.PI / 2] : [-0.6, -0.3, 0, 0.3, 0.6];
+    const candidates = turns.map((turn, j) => {
+        const angle = atBedrock ? turn : clamp(
             heading * 0.9 + turn + (random(key + j * 11) - 0.5) * 0.8,
             -limit,
             limit,
           ),
-          x = clamp(a.x + Math.sin(angle) * step, -69, 69),
-          y = a.y - Math.cos(angle) * step;
+          x = clamp(a.x + Math.sin(angle) * step, -MAP_HALF + 0.01, MAP_HALF - 0.01),
+          y = Math.max(-DEPTH + 0.01, a.y - Math.cos(angle) * step);
+        const cell = cellAt(s, x, y);
         return {
           x,
           y,
           angle,
-          score:
-            cellAt(s, x, y).m * 0.8 +
-            cellAt(s, x, y).n * 0.06 +
+          score: x === a.x && y === a.y ? -Infinity :
+            cell.m * 0.8 + cell.n * 0.06 +
             random(key + j * 7) * 14 -
             Math.abs(angle - heading) * 1.5,
         };
       })
       .sort((a, b) => b.score - a.score);
     const b = candidates[0];
+    if (!Number.isFinite(b.score)) continue;
     const radiusA =
         a.radius ?? (getSpecies(p.sid)?.type === "weed" ? 0.023 : 0.06),
       radiusB = Math.max(0.003, radiusA * (0.965 - random(key + 12) * 0.012));
@@ -413,7 +326,7 @@ export function returnWeedToSoil(s, weed) {
   }
 }
 export const WORM_LIMIT = 8;
-const wormRows = 9;
+const wormRows = ROWS - 1;
 export function stepWorms(state) {
   const { worms, soil, day } = state;
   if (day % 16 === 0 && worms.length < WORM_LIMIT) {
@@ -470,17 +383,22 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   s.day++;
   const summer = Math.floor((s.day % 365) / 91.25) === 1,
     rain = raining(s.day);
+  let lastSample = -1, sky;
   for (let c = 0; c < COLS; c++) {
-    const x = -HALF + (c + 0.5) * CW,
-      top = s.soil[c],
-      e = exposure(x, 0, null);
-    if (rain) s.surface[c] = clamp(s.surface[c] + 2.1 * e.rain, 0, 80);
+    const plotColumn = c >= PLOT_FIRST && c < PLOT_END;
+    const sampleColumn = plotColumn ? c : Math.min(COLS - 1, Math.floor(c / 4) * 4 + 2);
+    if (sampleColumn !== lastSample) {
+      sky = exposure(soilX(sampleColumn), 0, null);
+      lastSample = sampleColumn;
+    }
+    const top = s.soil[c];
+    if (rain) s.surface[c] = clamp(s.surface[c] + 2.1 * sky.rain, 0, 80);
     for (let r = 0; r < ROWS; r++) {
       const cell = s.soil[r * COLS + c],
         evap =
           (summer ? 0.75 : 0.42) *
           (1 - 0.6 * top.mulch) *
-          (0.35 + 0.65 * e.light) *
+          (0.35 + 0.65 * sky.light) *
           Math.exp(-r * 0.5);
       cell.m = clamp(cell.m - evap, 0, 100);
       const decay = Math.min(cell.litter, (0.025 * cell.c * cell.m) / 100);
@@ -495,7 +413,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     p.age = (p.age || 0) + 1 / 365;
     const e = exposure(p.x, plantHeight(p) * 0.72, p.id);
     p.light = e.light;
-    const samples = plantSoilCells(s, p, true);
+    const samples = plantSoilCells(s, p);
     const m = samples.reduce((a, c) => a + c.m, 0) / samples.length,
       n = samples.reduce((a, c) => a + c.n, 0) / samples.length;
     const neighbors = s.plants.filter(

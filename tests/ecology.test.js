@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 import {
   freshState,
   packState,
-  migrate,
+  loadState,
   addWater,
   hydrology,
   growRoots,
   score,
   COLS,
+  ROWS,
+  HALF,
+  CW,
+  colAt,
   stepDay,
 } from "../dist/ecology.js";
 function plant(i, sid = "oak") {
@@ -28,15 +32,15 @@ function plant(i, sid = "oak") {
 test("a pour pools first and wets the top before deep soil", () => {
   const s = freshState(),
     control = structuredClone(s),
-    top = s.soil[32].m;
+    top = s.soil[colAt(0)].m;
   addWater(s, 0, 20);
-  assert.equal(s.soil[32].m, top);
-  assert.equal(s.surface[32], 20);
+  assert.equal(s.soil[colAt(0)].m, top);
+  assert.equal(s.surface[colAt(0)], 20);
   hydrology(s, 0.1);
   hydrology(control, 0.1);
-  assert.ok(s.soil[32].m > control.soil[32].m);
-  assert.ok(s.surface[32] > 0);
-  assert.equal(s.soil[COLS * 10 + 32].m, control.soil[COLS * 10 + 32].m);
+  assert.ok(s.soil[colAt(0)].m > control.soil[32].m);
+  assert.ok(s.surface[colAt(0)] > 0);
+  assert.equal(s.soil[COLS * (ROWS - 1) + colAt(0)].m, control.soil[COLS * (ROWS - 1) + colAt(0)].m);
 });
 test("existing root vertices are immutable while new tips extend", () => {
   const s = freshState(),
@@ -97,30 +101,26 @@ test("neighbor shelter gives a growth bonus in suitable light", () => {
   stepDay(b, () => ({ light: 0.6, rain: 1 }));
   assert.ok(b.plants[0].biomass > a.plants[0].biomass);
 });
-test("old saves migrate to the fine grid and retain budget and plant identities", () => {
-  const s = freshState();
-  const m = migrate({
-    phase: 2,
-    budget: 3400,
-    survey: ["oak"],
-    plants: [plant(1)],
-    weeds: [],
-    soil: Array(24).fill({
-      m: 50,
-      n: 40,
-      d: 0.8,
-      o: 1,
-      c: 0.8,
-      mulch: 1,
-      litter: 0,
-    }),
-    prep: [true, true, true],
-    day: 0,
-    warned: {},
-  });
-  assert.equal(m.budget, 3400);
-  assert.equal(m.plants[0].sid, "oak");
-  assert.equal(m.soil.length, s.soil.length);
+test("saves from before the map grid start a fresh forest", () => {
+  const legacy = { ...freshState(), version: 2, phase: 5, budget: 3400, plants: [plant(1)] };
+  const state = loadState(legacy);
+  assert.equal(state.phase, 0);
+  assert.equal(state.budget, 18000);
+  assert.deepEqual(state.plants, []);
+  assert.equal(state.soil.length, COLS * ROWS);
+});
+
+test("water flows across the plot fence and infiltrates woodland soil", () => {
+  const state = freshState(42);
+  const outside = colAt(HALF + CW / 2);
+  state.soil[outside - 1].m = state.soil[outside].m = 40;
+  addWater(state, HALF - CW / 2, 40);
+  hydrology(state, 0.4);
+  assert.ok(state.soil[outside].m > 40);
+  const before = state.soil[outside].m;
+  addWater(state, HALF + CW / 2, 40);
+  hydrology(state, 0.4);
+  assert.ok(state.soil[outside].m > before);
 });
 
 test("soil varies in both moisture and nutrients across the bed", () => {
@@ -139,9 +139,9 @@ test("even a full puddle infiltrates within two simulated days", () => {
     hydrology(s, 1 / 60);
     hydrology(control, 1 / 60);
   }
-  assert.equal(s.surface[32], 0);
-  assert.ok(s.soil[COLS + 32].m > control.soil[COLS + 32].m);
-  assert.ok(s.soil[31].m > control.soil[31].m);
+  assert.equal(s.surface[colAt(0)], 0);
+  assert.ok(s.soil[COLS + colAt(0)].m > control.soil[COLS + colAt(0)].m);
+  assert.ok(s.soil[colAt(0) - 1].m > control.soil[colAt(0) - 1].m);
 });
 
 test("a dead plant keeps its cause of death after reload and improved soil", () => {
@@ -155,7 +155,7 @@ test("a dead plant keeps its cause of death after reload and improved soil", () 
   stepDay(s);
   assert.equal(oak.health, 0);
   assert.match(oak.deathReason, /dry soil around the roots/);
-  const saved = migrate(JSON.parse(packState(s)));
+  const saved = loadState(JSON.parse(packState(s)));
   for (const cell of saved.soil) cell.m = 55;
   stepDay(saved);
   assert.equal(saved.plants[0].health, 0);

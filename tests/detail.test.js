@@ -12,7 +12,10 @@ import {
   COLS,
   ROWS,
   CH,
-  migrate,
+  CW,
+  DEPTH,
+  MAP_HALF,
+  loadState,
   packState,
 } from "../dist/ecology.js";
 import { makeArchitecture } from "../dist/architecture.js";
@@ -88,7 +91,7 @@ test("compact saves restore root paths and remain small for a dense forest", () 
   }));
   const packed = packState(s);
   assert.ok(packed.length < 4e6);
-  const restored = migrate(JSON.parse(packed));
+  const restored = loadState(JSON.parse(packed));
   assert.deepEqual(
     restored.plants[0].roots[0],
     JSON.parse(JSON.stringify(s.plants[0].roots[0])),
@@ -139,19 +142,6 @@ test("live roots draw moisture from the soil cells along their paths", async () 
   assert.equal(cellAt(planted, 4, y).m, cellAt(dryControl, 4, y).m);
 });
 
-test("the narrower plot moves saved plants and roots into the new bounds once", async () => {
-  const { migrate } = await import("../dist/ecology.js");
-  const save = freshState();
-  save.plotWidth = 20;
-  save.plants.push({ sid: "oak", x: 9, roots: [{ a: [9, 0], b: [9.5, -0.2] }],
-    tips: [{ x: 9.5, y: -0.2 }] });
-  const updated = migrate(save);
-  const migratedX = updated.plants[0].x;
-  assert.ok(Math.abs(migratedX - 6) < 1e-9);
-  assert.ok(updated.plants[0].roots[0].b[0] < HALF);
-  assert.equal(migrate(updated).plants[0].x, migratedX);
-});
-
 test("worms seek a rich patch, then spread its nutrients without creating new ones", () => {
   const state = freshState();
   for (const cell of state.soil) cell.n = 20;
@@ -167,24 +157,26 @@ test("worms seek a rich patch, then spread its nutrients without creating new on
   stepWorms(state);
   assert.ok(rich.n < 90);
   assert.ok(state.soil.some(cell => cell !== rich && cell.n > 20));
-  const restored = migrate(JSON.parse(packState(state)));
+  const restored = loadState(JSON.parse(packState(state)));
   assert.deepEqual(restored.worms, state.worms);
   const transferred = restored.soil.reduce((sum, cell) => sum + cell.n, restored.worms[0].cargo);
   assert.ok(Math.abs(total - transferred) < 1e-8);
 });
 
-test("a fresh soil seed varies all rows, including the deep cutaway", () => {
+test("one seeded square grid gets wetter and richer with depth across the map", () => {
   const state = freshState(102);
   const rowStep = state.soil.slice(1, COLS).reduce((sum, cell, i) => sum + Math.abs(cell.n - state.soil[i].n), 0) / (COLS - 1);
-  assert.ok(rowStep < 10);
-  for (let row = 0; row < ROWS; row++) {
-    const cells = state.soil.slice(row * COLS, (row + 1) * COLS);
-    assert.ok(new Set(cells.map(cell => Math.round(cell.n))).size > 10);
-  }
-  const deep = sampleSoil(state, 0, -(ROWS + 3.5) * CH);
-  assert.notEqual(deep.n, sampleSoil(state, 0, -(ROWS + 4.5) * CH).n);
-  assert.notEqual(deep.n, sampleSoil(freshState(103), 0, -(ROWS + 3.5) * CH).n);
-  assert.deepEqual(deep, sampleSoil(migrate(JSON.parse(packState(state))), 0, -(ROWS + 3.5) * CH));
+  assert.ok(rowStep < 14);
+  assert.equal(CW, CH);
+  const average = (row, key) => state.soil.slice(row * COLS, (row + 1) * COLS)
+    .reduce((sum, cell) => sum + cell[key], 0) / COLS;
+  assert.ok(average(ROWS - 1, "n") > average(0, "n") + 15);
+  assert.ok(average(ROWS - 1, "m") > average(0, "m") + 14);
+  assert.ok(average(0, "d") > average(ROWS - 1, "d"));
+  const deep = sampleSoil(state, MAP_HALF - CW / 2, -DEPTH + CH / 2);
+  assert.equal(deep, state.soil.at(-1));
+  assert.notEqual(deep.n, sampleSoil(freshState(103), MAP_HALF - CW / 2, -DEPTH + CH / 2).n);
+  assert.deepEqual(deep, loadState(JSON.parse(packState(state))).soil.at(-1));
 });
 
 test("a worm keeps its horizontal heading across successive soil cells", () => {
