@@ -856,3 +856,57 @@ dialog::backdrop { background:#060c1699; }
   .shop-thumbnail { grid-row: span 2; }
   .shop-entry button { justify-self: start; }
 }
+
+#topHUD {
+  padding: calc(8px + env(safe-area-inset-top)) 12px 0;
+}
+#topHUD .phase {
+  width: min(380px, calc(100% - 84px));
+  padding: 0;
+}
+#topHUD #timeline {
+  width: 100%;
+  margin-top: 5px;
+  padding: 6px 9px;
+}
+#topHUD #timeline:has(progress[hidden]) {
+  width: fit-content;
+  margin-top: 0;
+}
+#timeline progress {
+  display: block;
+  margin: 5px 0 0;
+}
+.farmer-bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  visibility: hidden;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid #526277;
+  border-radius: 10px;
+  background: #141e2cf5;
+  color: #f5f8fc;
+  font: 600 13px/1.25 system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+.farmer-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: var(--bubble-tail, 50%);
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid #526277;
+  border-bottom: 1px solid #526277;
+  background: #141e2c;
+}
+@media (max-width: 540px) {
+  #topHUD .phase { margin-right: 84px; }
+}

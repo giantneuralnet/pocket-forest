@@ -27,6 +27,11 @@ const boxGeometry = new T.BoxGeometry(1, 1, 1),
   leafGeometry = new T.PlaneGeometry(1, 1).translate(0, 0.405, 0),
   materialCache = new Map(),
   leafStamps = new Map();
+const FLOOR_DEPTH = -1;
+const FLOOR_WIDTH = 6;
+const FLOOR_FRONT = FLOOR_DEPTH + FLOOR_WIDTH / 2;
+const SOIL_FACE_DEPTH = 3.02;
+const SOIL_LEFT = -70;
 const flowerGeometry = new T.PlaneGeometry(1, 1);
 const fruitGeometry = new T.SphereGeometry(0.5, 10, 8);
 const flowersBySpecies = new Map();
@@ -277,11 +282,11 @@ export class ForestView {
     this.ground = new T.Group();
     this.scene.add(this.ground);
     this.baseSoilColor = new T.Color().setHSL(0.069, 0.49, 0.061);
-    const soilBase = box(this.ground, 0, -60, -1, 180, 120, 6, 0x453021);
-    soilBase.material = new T.MeshBasicMaterial({color: this.baseSoilColor});
-
-    const surface = box(this.ground, 0, -0.045, -1, 180, 0.09, 6, 0x39291e);
-    surface.material = new T.MeshBasicMaterial({color: this.baseSoilColor});
+    const soilBase = box(this.ground, 0, -60, FLOOR_DEPTH, 180, 120, FLOOR_WIDTH, 0x453021);
+    // The soil is a cutaway backdrop. It leaves depth testing available for
+    // roots, trunks, and objects on the surface.
+    soilBase.material = new T.MeshBasicMaterial({ color: this.baseSoilColor, depthWrite: false });
+    soilBase.renderOrder = -2;
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
     const offsets = [12, 15.6, 19.5, 23, 27.5, 31, 35, 39, 44, 49, 55];
     for (const side of [-1, 1])
@@ -333,23 +338,23 @@ export class ForestView {
       this.addPlant(p);
     }
     for (const side of [-1, 1]) {
-      const wall = box(
+      box(
         this.scene,
         side * (HALF + 0.14),
-        0.18,
-        2,
+        0.54,
+        FLOOR_FRONT,
         0.35,
-        0.68,
+        1.08,
         0.8,
         0xa3987c,
       );
-      box(this.scene, side * (HALF + 0.14), 0.56, 2, 0.49, 0.12, 0.9, 0xc4b79a);
-      for (let j = 0; j < 3; j++)
+      box(this.scene, side * (HALF + 0.14), 1.08, FLOOR_FRONT, 0.49, 0.12, 0.9, 0xc4b79a);
+      for (let j = 1; j <= 4; j++)
         box(
           this.scene,
           side * (HALF + 0.14),
-          j * 0.19,
-          2.42,
+          j * 0.216,
+          FLOOR_FRONT + 0.405,
           0.36,
           0.014,
           0.025,
@@ -360,36 +365,26 @@ export class ForestView {
     this.soilRows = Math.ceil(12 / CH);
     this.soilMesh = new T.InstancedMesh(
       soilGeometry,
-      new T.MeshBasicMaterial({ color: 0xffffff }),
+      new T.MeshBasicMaterial({ color: 0xffffff, depthWrite: false }),
       this.soilCols * this.soilRows,
     );
+    this.soilMesh.renderOrder = -1;
+    this.highlightedSoil = -1;
     this.scene.add(this.soilMesh);
     const dummy = new T.Object3D();
+    const soilColor = new T.Color();
     for (let r = 0; r < this.soilRows; r++)
       for (let c = 0; c < this.soilCols; c++) {
-        const x = -70 + (c + 0.5) * CW,
-          y = -(r + 0.5) * CH;
-        dummy.position.set(x, y, 3.02);
+        const x = SOIL_LEFT + (c + 0.5) * CW;
+        const y = -(r + 0.5) * CH;
+        dummy.position.set(x, y, SOIL_FACE_DEPTH);
         dummy.scale.set(CW * 0.998, CH * 0.998, 0.035);
         dummy.updateMatrix();
         this.soilMesh.setMatrixAt(r * this.soilCols + c, dummy.matrix);
-        const hsl = soilColorHSL(sampleSoil(this.state, x, y));
-        this.soilMesh.setColorAt(
-          r * this.soilCols + c,
-          Math.abs(x) < HALF ? new T.Color().setHSL(hsl.h, hsl.s, hsl.l) : this.baseSoilColor,
-        );
+        this.paintSoilTile(r * this.soilCols + c, soilColor);
       }
     this.mulchMesh = new T.InstancedMesh(boxGeometry, material(0x9b743e), COLS);
     this.scene.add(this.mulchMesh);
-    this.soilOutline = box(this.scene, 0, 0, 3.1, CW, CH, 0.01, 0xffffff);
-    this.soilOutline.material = new T.MeshBasicMaterial({
-      color: 0xf0dfb5,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.8,
-      depthTest: false,
-    });
-    this.soilOutline.visible = false;
     this.waterMesh = new T.InstancedMesh(
       boxGeometry,
       new T.MeshBasicMaterial({
@@ -490,17 +485,40 @@ export class ForestView {
     );
   }
   inspectSoil(x, y) {
-    const p = this.worldPoint(x, y, 3.05);
-    if (p.y >= -0.025) {
-      this.soilOutline.visible = false;
+    const point = this.worldPoint(x, y, SOIL_FACE_DEPTH);
+    if (point.y >= 0) {
+      this.highlightSoil();
       return null;
     }
-    const cell = sampleSoil(this.state, p.x, p.y),
-      cx = (Math.floor(p.x / CW) + 0.5) * CW,
-      cy = -(Math.floor(-p.y / CH) + 0.5) * CH;
-    this.soilOutline.position.set(cx, cy, 3.1);
-    this.soilOutline.visible = true;
-    return { cell, point: p };
+    const col = Math.floor((point.x - SOIL_LEFT) / CW);
+    const row = Math.floor(-point.y / CH);
+    const inCutaway = col >= 0 && col < this.soilCols && row < this.soilRows;
+    this.highlightSoil(inCutaway ? row * this.soilCols + col : -1);
+    return { cell: sampleSoil(this.state, point.x, point.y), point };
+  }
+  highlightSoil(index = -1) {
+    if (index === this.highlightedSoil) return;
+    const previous = this.highlightedSoil;
+    this.highlightedSoil = index;
+    const color = new T.Color();
+    if (previous >= 0) this.paintSoilTile(previous, color);
+    if (index >= 0) this.paintSoilTile(index, color);
+    this.soilMesh.instanceColor.needsUpdate = true;
+  }
+  paintSoilTile(index, color) {
+    const row = Math.floor(index / this.soilCols);
+    const x = SOIL_LEFT + (index % this.soilCols + 0.5) * CW;
+    if (Math.abs(x) < HALF) {
+      const cell = this.state.soil[Math.min(row, ROWS - 1) * COLS + colAt(x)];
+      const { h, s, l } = soilColorHSL(cell);
+      const dug = row < 3 ? (cell.d - 0.15) * 0.014 * (1 - row / 3) : 0;
+      const depthBlend = clamp((row - ROWS + 1) / (this.soilRows - ROWS));
+      color.setHSL(h, s, l - dug).lerp(this.baseSoilColor, depthBlend);
+    } else {
+      color.copy(this.baseSoilColor);
+    }
+    if (index === this.highlightedSoil) color.offsetHSL(0, 0, 0.065);
+    this.soilMesh.setColorAt(index, color);
   }
   project(x, y, z = 4) {
     const p = new T.Vector3(x, y, z).project(this.camera);
@@ -531,7 +549,7 @@ export class ForestView {
     const data = record.recipe.leaves;
     record.wood = new T.InstancedMesh(
       taperedGeometry,
-      barkMaterial(sp),
+      barkMaterial(sp).clone(),
       record.recipe.nodes.length + data.length,
     );
     record.wood.userData.pid = p.id;
@@ -824,11 +842,10 @@ export class ForestView {
           color: rec.sp.type === "weed" ? 0xb59a77 : 0xc4a17b,
           transparent: true,
           opacity: 0.9,
-          depthTest: false,
+          depthWrite: false,
         }),
         1024,
       );
-      rec.rootMesh.renderOrder = 3;
       rec.rootMesh.frustumCulled = false;
       this.scene.add(rec.rootMesh);
       this.rootAllocations++;
@@ -848,11 +865,12 @@ export class ForestView {
         }
       }
     }
+    const rootDepth = (rec.p.z ?? 1) - 0.8;
     let count = startCount;
     for (let i = count; i < Math.min(1024, segments.length); i++) {
       const segment = segments[i],
-        a = new T.Vector3(segment.a[0], segment.a[1], rec.p.z ?? 1),
-        b = new T.Vector3(segment.b[0], segment.b[1], rec.p.z ?? 1),
+        a = new T.Vector3(segment.a[0], segment.a[1], rootDepth),
+        b = new T.Vector3(segment.b[0], segment.b[1], rootDepth),
         delta = b.clone().sub(a),
         radius = baseRadius * clamp(rootThickness({ ...segment, originX: rec.p.x }) / nominalRadius);
       dummy.position.copy(a).add(b).multiplyScalar(0.5);
@@ -887,6 +905,7 @@ export class ForestView {
           r.rootMesh.material.dispose();
         }
         r.wood.dispose();
+        r.wood.material.dispose();
         r.leaves.dispose();
         r.leaves.material.dispose();
         r.proxy.dispose();
@@ -908,15 +927,10 @@ export class ForestView {
   updateSoil() {
     const dummy = new T.Object3D(),
       color = new T.Color();
-    for (let r = 0; r < this.soilRows; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const x = -HALF + (c + 0.5) * CW;
-        const index = r * this.soilCols + Math.floor((x + 70) / CW);
-        const cell = this.state.soil[Math.min(r, ROWS - 1) * COLS + c];
-        const { h, s, l } = soilColorHSL(cell);
-        const dug = r < 3 ? (cell.d - 0.15) * 0.014 * (1 - r / 3) : 0;
-        const depthBlend = clamp((r - ROWS + 1) / (this.soilRows - ROWS));
-        this.soilMesh.setColorAt(index, color.setHSL(h, s, l - dug).lerp(this.baseSoilColor, depthBlend));
+    const firstPlotColumn = Math.round((-HALF - SOIL_LEFT) / CW);
+    for (let row = 0; row < this.soilRows; row++) {
+      for (let col = 0; col < COLS; col++) {
+        this.paintSoilTile(row * this.soilCols + firstPlotColumn + col, color);
       }
     }
     this.soilMesh.instanceColor.needsUpdate = true;
@@ -1129,9 +1143,17 @@ export class ForestView {
   }
   highlight(p) {
     if (this.hover === p) return;
-    this.records.get(this.hover?.id)?.leaves.material.emissive.setHex(0);
+    const previous = this.records.get(this.hover?.id);
+    if (previous) {
+      previous.leaves.material.emissive.setHex(0);
+      previous.wood.material.emissive.setHex(0);
+    }
     this.hover = p;
-    this.records.get(p?.id)?.leaves.material.emissive.setHex(0x4a5021);
+    const current = this.records.get(p?.id);
+    if (current) {
+      current.leaves.material.emissive.setHex(0x4a5021);
+      current.wood.material.emissive.setHex(0x5d492e);
+    }
   }
   exposure(x, y, self = null) {
     const key =
@@ -1188,15 +1210,21 @@ export class ForestView {
     this.target = 0;
     box(this.farmer, 0, 1.02, 0, 0.44, 0.6, 0.28, 0x618052);
     const head = new T.Group();
-    head.position.y = 1.55;
+    head.position.y = 1.515;
     this.farmer.add(head);
     box(head, 0, 0, 0, 0.4, 0.4, 0.4, 0xd3ae86);
-    box(head, -0.085, 0.035, 0.21, 0.045, 0.045, 0.015, 0x3a4031);
-    box(head, 0.085, 0.035, 0.21, 0.045, 0.045, 0.015, 0x3a4031);
+    box(head, -0.088, 0.012, 0.21, 0.068, 0.071, 0.016, 0x3a4031);
+    box(head, 0.088, 0.012, 0.21, 0.068, 0.071, 0.016, 0x3a4031);
+    const hair = 0x514034;
+    box(head, 0, 0.174, -0.19, 0.41, 0.08, 0.04, hair);
+    box(head, 0, 0.112, 0.203, 0.40, 0.085, 0.018, hair);
+    box(head, -0.144, 0.079, 0.204, 0.10, 0.048, 0.02, hair);
+    for (const side of [-1, 1])
+      box(head, side * 0.197, 0.105, -0.035, 0.026, 0.15, 0.34, hair);
     box(head, 0, 0.24, 0, 0.73, 0.09, 0.63, 0xd5ba76);
-    box(head, 0, -0.102, 0.207, 0.105, 0.018, 0.016, 0x654234);
+    box(head, 0, -0.102, 0.207, 0.12, 0.025, 0.016, 0x654234);
     for (const side of [-1, 1]) {
-      const corner = box(head, side * 0.062, -0.086, 0.207, 0.038, 0.016, 0.016, 0x654234);
+      const corner = box(head, side * 0.062, -0.086, 0.207, 0.044, 0.023, 0.016, 0x654234);
       corner.rotation.z = side * 0.65;
     }
     box(head, 0, 0.33, 0, 0.37, 0.12, 0.35, 0xbda16c);
@@ -1204,28 +1232,30 @@ export class ForestView {
     this.arms = [];
     for (const side of [-1, 1]) {
       const leg = new T.Group();
-      leg.position.set(side * 0.14, 0.72, 0);
+      leg.position.set(side * 0.11, 0.72, 0);
       this.farmer.add(leg);
       box(leg, 0, -0.3, 0, 0.22, 0.6, 0.25, 0x40594b);
       box(leg, 0, -0.665, 0.04, 0.24, 0.11, 0.33, 0x554c38);
       this.legs.push(leg);
       const arm = new T.Group();
-      arm.position.set(side * 0.32, 1.27, 0);
+      arm.position.set(side * 0.32, 1.32, 0);
       this.farmer.add(arm);
       box(arm, 0, -0.26, 0, 0.20, 0.52, 0.24, 0xd3ae86);
       this.arms.push(arm);
     }
-    for (let i = 0; i < 8; i++)
-      box(
-        this.farmer,
-        (random(i) - 0.5) * 0.35,
-        0.85 + random(i + 1) * 0.4,
-        0.148,
-        0.06,
-        0.06,
-        0.01,
-        0x7e9867,
-      );
+    const treeBadge = [
+      "..x..",
+      ".xxx.",
+      "..x..",
+      ".xxx.",
+      "xxxxx",
+      "..t..",
+    ];
+    treeBadge.forEach((row, y) => [...row].forEach((pixel, x) => {
+      if (pixel === ".") return;
+      box(this.farmer, (x - 2) * 0.045, 1.19 - y * 0.045, 0.146,
+        0.045, 0.045, 0.012, pixel === "t" ? 0xccab73 : 0xd5e4a2);
+    }));
   }
   makeTools() {
     this.toolRoot = new T.Group();
@@ -1492,7 +1522,7 @@ export class ForestView {
     const r = this.records.get(p.id);
     if (!r) return;
     if (this.hover === p) this.highlight(null);
-    const floorDepth = 1.65;
+    const floorDepth = FLOOR_FRONT - 0.04;
     for (let i = 0; i < 9; i++) {
       const mesh = box(this.scene, p.x, 0.12 + random(i) * r.height * 0.8,
         floorDepth, 0.12 + random(i + 3) * 0.16, 0.045, 0.06,
@@ -1580,7 +1610,7 @@ export class ForestView {
         if (e.kind === "compost" && Math.abs(e.mesh.position.x) < HALF)
           this.pendingCompost.push(e.mesh.position.x);
         if (e.kind === "weed" && e.life > 0) {
-          e.mesh.position.y = 0.04;
+          e.mesh.position.z = Math.min(e.mesh.position.z, FLOOR_FRONT - 0.04);
           e.vy = 0;
           e.vx = 0;
           e.mesh.rotation.set(0, random(i + 7) * Math.PI, 0);

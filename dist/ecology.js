@@ -271,7 +271,7 @@ export function growRoots(s, p) {
     if (a.y <= -11.8) continue;
     const key = p.seed * 101 + s.day * 13 + i * 37,
       step =
-        (0.045 + random(key) * 0.07) * (0.15 + 0.85 / (1 + (p.age || 0) * 0.9)),
+        (0.08 + random(key) * 0.125) * (0.15 + 0.85 / (1 + (p.age || 0) * 0.9)),
       heading = a.angle ?? a.dir * 0.4;
     const candidates = [-0.6, -0.3, 0, 0.3, 0.6]
       .map((turn, j) => {

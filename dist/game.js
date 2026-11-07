@@ -74,15 +74,6 @@ const phaseNames = [
   "Your forest review",
   "Watch your forest mature",
 ];
-const instructions = [
-  "Drag in any direction. Pinch to zoom. Tap a plant to open its field note.",
-  "Dig with the shovel, then pour the compost and organic matter mix onto the soil.",
-  "Buy a seedling, then tap the plot, drag the pot, or use the side arrows to position it.",
-  "Choose mulch or water and apply it wherever you want to tend the bed.",
-  "Watch your plants grow, water them, and pick weeds.",
-  "Review the health, variety, density and care of your forest.",
-  "Watch your plants grow, water them, and pick weeds.",
-];
 let savePending = false;
 function save(immediate = false) {
   if (resetting || (savePending && immediate !== true)) return;
@@ -181,7 +172,7 @@ function formatAge(age) {
 }
 function hideTooltip() {
   $("tooltip").style.display = "none";
-  if (view?.soilOutline) view.soilOutline.visible = false;
+  view?.highlightSoil();
 }
 function highlight(p) {
   highlighted = p;
@@ -372,7 +363,7 @@ function updateUI() {
   const p = state.phase;
   const surveyed = state.survey.filter(id => byId(id)?.type !== "weed").length;
   $("phaseTitle").textContent = p === 0 ? `${phaseNames[p]} · ${Math.min(5, surveyed)} out of 5` : phaseNames[p];
-  $("instruction").textContent = instructions[p];
+
   $("steps").innerHTML = phaseNames
     .slice(0, 6)
     .map(
@@ -422,7 +413,10 @@ function updateUI() {
     action("View review", showReview);
     n.textContent = "Continue growing →";
   }
+  $("steps").hidden = p === 6;
   $("timeline").hidden = ![4, 6].includes(p);
+  $("progress").hidden = p !== 4;
+  $("remaining").hidden = p !== 4;
   updateSelection();
   updateStats();
 }
@@ -863,6 +857,26 @@ $("about").onclick = () =>
   panel(
     `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. During survey, tap a plant to open its field note and choose Add to Notebook. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
   );
+const farmerBubble = $("phaseTitle");
+let bubbleWidth = 0;
+let bubbleHeight = 0;
+new ResizeObserver(([entry]) => {
+  const size = entry.borderBoxSize?.[0];
+  bubbleWidth = size?.inlineSize ?? farmerBubble.offsetWidth;
+  bubbleHeight = size?.blockSize ?? farmerBubble.offsetHeight;
+}).observe(farmerBubble);
+
+function placeFarmerBubble() {
+  const { x, y } = view.project(view.farmerX, 1.93, view.farmer.position.z);
+  const visible = x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight;
+  farmerBubble.style.visibility = visible ? "visible" : "hidden";
+  if (!visible) return;
+  const left = clamp(x - bubbleWidth / 2, 8, innerWidth - bubbleWidth - 8);
+  const top = Math.max(64, y - bubbleHeight - 12);
+  farmerBubble.style.transform = `translate3d(${left}px,${top}px,0)`;
+  farmerBubble.style.setProperty("--bubble-tail", `${clamp(x - left, 14, bubbleWidth - 14)}px`);
+}
+
 function frame(ms) {
   const cpuStart = performance.now();
   requestAnimationFrame(frame);
@@ -954,6 +968,7 @@ function frame(ms) {
   }
   // Camera-relative overlays follow the same animation frame as the scene.
   updateWeedAlerts();
+  placeFarmerBubble();
   $("world").dataset.renderMs = (performance.now() - renderStart).toFixed(1);
   const cpu = performance.now() - cpuStart;
   framePeak = Math.max(framePeak, cpu);

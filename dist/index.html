@@ -13,6 +13,7 @@
   <body>
     <main id="world" aria-label="Interactive woodland and planting bed">
       <div id="scene"></div>
+      <h1 id="phaseTitle" class="farmer-bubble"></h1>
       <div id="weedAlerts"></div>
       <div id="tooltip" role="status"></div>
       <div id="selection"></div>
@@ -25,11 +26,9 @@
       <strong id="money" aria-label="Budget"></strong>
       <div class="phase">
         <div id="steps"></div>
-        <h1 id="phaseTitle"></h1>
-        <p id="instruction"></p>
         <div id="timeline" hidden>
           <div><span id="date"></span><span id="remaining"></span></div>
-          <progress id="progress" max="1095"></progress>
+          <progress id="progress" max="1095" aria-label="Tending progress"></progress>
         </div>
       </div>
     </div>
