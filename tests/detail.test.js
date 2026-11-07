@@ -118,3 +118,31 @@ test("soil preparation changes only the clicked area and compost stays near the 
   assert.equal(s.soil[4 * COLS + c].n, before[4 * COLS + c].n);
   assert.equal(s.soil[0].n, before[0].n);
 });
+
+test("live roots draw moisture from the soil cells along their paths", async () => {
+  const { stepDay, cellAt } = await import("../dist/ecology.js");
+  const planted = freshState();
+  const dryControl = freshState();
+  const root = { a: [-1.12, -1.6], b: [-0.95, -1.65], born: 0, radiusA: 0.06 };
+  planted.plants.push({ id: "test-oak", sid: "oak", x: 0, age: 2, health: 100,
+    biomass: 1.5, planted: true, roots: [root], tips: [{ x: 0, y: -0.1 }], nextRootDay: 50 });
+  const x = (root.a[0] + root.b[0]) / 2;
+  const y = (root.a[1] + root.b[1]) / 2;
+  stepDay(planted);
+  stepDay(dryControl);
+  assert.ok(cellAt(planted, x, y).m < cellAt(dryControl, x, y).m);
+  assert.equal(cellAt(planted, 4, y).m, cellAt(dryControl, 4, y).m);
+});
+
+test("the narrower plot moves saved plants and roots into the new bounds once", async () => {
+  const { migrate } = await import("../dist/ecology.js");
+  const save = freshState();
+  save.plotWidth = 20;
+  save.plants.push({ sid: "oak", x: 9, roots: [{ a: [9, 0], b: [9.5, -0.2] }],
+    tips: [{ x: 9.5, y: -0.2 }] });
+  const updated = migrate(save);
+  const migratedX = updated.plants[0].x;
+  assert.ok(Math.abs(migratedX - 6) < 1e-9);
+  assert.ok(updated.plants[0].roots[0].b[0] < HALF);
+  assert.equal(migrate(updated).plants[0].x, migratedX);
+});

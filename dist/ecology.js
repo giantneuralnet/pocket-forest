@@ -1,5 +1,5 @@
 import { species } from "./species.js";
-export const HALF = 10,
+export const HALF = 20 / 3,
   COLS = 64,
   ROWS = 14,
   DEPTH = 4.8,
@@ -75,7 +75,9 @@ export function freshState() {
   return {
     version: 2,
     phase: 0,
-    budget: 6000,
+    budget: 18000,
+    plotWidth: HALF * 2,
+    reachedPhase: 0,
     survey: [],
     surveyPlants: [],
     plants: [],
@@ -154,6 +156,21 @@ export function migrate(saved) {
       saved.soilVariation = 1;
     }
     saved.extraSoil ??= {};
+    const ratio = (HALF * 2) / (saved.plotWidth ?? 20);
+    if (ratio !== 1) {
+      for (const p of [...saved.plants, ...saved.weeds]) {
+        p.x *= ratio;
+        for (const root of p.roots || []) {
+          root.a[0] *= ratio;
+          root.b[0] *= ratio;
+          if (root.originX != null) root.originX *= ratio;
+        }
+        for (const tip of p.tips || []) tip.x *= ratio;
+      }
+      for (const mushroom of saved.mushrooms || []) mushroom.x *= ratio;
+    }
+    saved.plotWidth = HALF * 2;
+    saved.reachedPhase ??= saved.phase;
     return saved;
   }
   const s = freshState();
@@ -193,6 +210,7 @@ export function migrate(saved) {
       { m: saved.soil[Math.min(23, Math.floor(((i % COLS) / COLS) * 24))].m },
     ),
   );
+  s.reachedPhase = s.phase;
   if (s.phase === 5 || s.phase === 6) s.review = score(s);
   return s;
 }
@@ -207,7 +225,7 @@ export const plantHeight = (p) => {
           sp.height * (sp.type === "weed" ? 1.35 : 1),
           (sp.type === "weed" ? 0.53 : 0.38) + (p.biomass || 0),
         )
-      : 0.45;
+      : Math.min(sp.height, 0.38 + (p.biomass || 0.07));
 };
 export const raining = (day) =>
   Math.floor((day % 365) / 91.25) === 1
@@ -336,13 +354,17 @@ export function growRoots(s, p) {
 export function prepareSoilAt(s, x, tool) {
   const center = colAt(x);
   const digging = tool === "drainage";
-  const depth = digging ? 5 : 3;
-  for (let c = Math.max(0, center - 2); c <= Math.min(COLS - 1, center + 2); c++) {
-    const spread = 1 - Math.abs(c - center) * 0.25;
+  const depth = digging ? 5 : 4;
+  const spreadColumns = digging ? 3 : 5;
+  for (let c = Math.max(0, center - spreadColumns); c <= Math.min(COLS - 1, center + spreadColumns); c++) {
+    const spread = 1 - Math.abs(c - center) / (spreadColumns + 2);
     for (let r = 0; r < depth; r++) {
       const cell = s.soil[r * COLS + c];
       const dose = spread * (1 - r / depth);
-      if (digging) cell.d = Math.min(1, cell.d + 0.42 * dose);
+      if (digging) {
+        cell.d = Math.min(1, cell.d + 0.42 * dose);
+        cell.m = Math.max(0, cell.m - 4 * dose);
+      }
       else {
         cell.n = Math.min(100, cell.n + 2.4 * dose);
         cell.o = Math.min(1, cell.o + 0.07 * dose);
@@ -350,7 +372,7 @@ export function prepareSoilAt(s, x, tool) {
       }
     }
   }
-  if (!digging) s.prep[1] = s.prep[2] = true;
+  if (!digging && s.phase === 1) s.prep[1] = s.prep[2] = true;
 }
 export function returnLeafToSoil(state, x, area) {
   const cell = cellAt(state, x);
@@ -376,7 +398,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     for (let r = 0; r < ROWS; r++) {
       const cell = s.soil[r * COLS + c],
         evap =
-          (summer ? 0.48 : 0.26) *
+          (summer ? 0.75 : 0.42) *
           (1 - 0.6 * top.mulch) *
           (0.35 + 0.65 * e.light) *
           Math.exp(-r * 0.5);
@@ -394,7 +416,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     const e = exposure(p.x, plantHeight(p) * 0.72, p.id);
     p.light = e.light;
     const roots = p.tips?.length ? p.tips : [{ x: p.x, y: -0.08 }],
-      samples = roots.map((t) => cellAt(s, t.x, t.y));
+      samples = [...new Set(roots.map(t => cellAt(s, t.x, t.y)))];
     const m = samples.reduce((a, c) => a + c.m, 0) / samples.length,
       n = samples.reduce((a, c) => a + c.n, 0) / samples.length;
     const neighbors = s.plants.filter(
@@ -421,9 +443,19 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
       0,
       sp.height - 0.38,
     );
-    for (const cell of samples) {
-      cell.m = clamp(cell.m - (sp.type === "weed" ? 0.15 : 0.035), 0, 100);
-      cell.n = clamp(cell.n - (sp.type === "weed" ? 0.027 : 0.008), 0, 100);
+    if (p.health > 0) {
+      const active = new Set(samples);
+      const stride = Math.max(1, Math.floor((p.roots?.length ?? 0) / 12));
+      for (let i = 0; i < (p.roots?.length ?? 0); i += stride) {
+        const { a, b } = p.roots[i];
+        active.add(cellAt(s, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2));
+      }
+      const demand = (sp.type === "weed" ? 0.33 : 0.48 + Math.min(1.9, plantHeight(p) * 0.16)) * (summer ? 1.22 : 1);
+      const perCell = demand * (p.health / 100) / Math.sqrt(active.size);
+      for (const cell of active) {
+        cell.m = Math.max(0, cell.m - perCell);
+        cell.n = Math.max(0, cell.n - 0.015);
+      }
     }
     if (p.health > 0 && s.day >= (p.nextRootDay ?? 0)) {
       growRoots(s, p);
@@ -434,7 +466,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   // Open, unmulched patches recruit often; mulch and a closed canopy lower the probability.
   if (s.day % 4 === 0 && s.weeds.length < 42) {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const x = random(s.day * 4 + attempt) * 19 - 9.5,
+      const x = (random(s.day * 4 + attempt) * 2 - 1) * (HALF - 0.35),
         top = cellAt(s, x),
         e = exposure(x, 0.2, null);
       if (
@@ -459,7 +491,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   // Each mushroom has its own persistent birth and death date, instead of a modulo flash.
   s.mushrooms = s.mushrooms.filter((m) => m.until > s.day);
   if (rain && s.day % 47 === 0 && s.mushrooms.length < 6) {
-    const x = random(s.day) * 19 - 9.5,
+    const x = (random(s.day) * 2 - 1) * (HALF - 0.35),
       c = cellAt(s, x);
     if (c.c > 0.3 && c.m > 48)
       s.mushrooms.push({

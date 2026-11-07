@@ -1,6 +1,5 @@
 import { returnLeafToSoil, returnWeedToSoil, prepareSoilAt } from "./ecology.js";
-import { makeArchitecture, poseArchitecture, leafAttachment } from "./architecture.js";
-import { species, layers, sources } from "./species.js";
+import { layers, sources } from "./species.js";
 import {
   HALF,
   COLS,
@@ -47,13 +46,15 @@ let framePeak = 0,
   frameCount = 0,
   framesOver16 = 0,
   monitorTime = 0;
+const supplyPrices = { mulch: 15, water: 5, compost: 25 };
+const legacySeedPrices = { oak: 450, cinnamon: 380, hackberry: 420, privet: 260, camellia: 300, eurya: 200, castanopsis: 480, ardisia: 160, four: 140, fern: 120 };
 let tool = null,
+  selectedSpecies = null,
+  nextToolAt = 0,
   selected = null,
   highlighted = null,
   pointer = { x: innerWidth / 2, y: innerHeight * 0.6 },
   applying = false,
-  lastToolX = null,
-  toolAccumulator = 0,
   toolActionUntil = 0,
   simAccumulator = 0,
   lastTime = 0,
@@ -67,7 +68,7 @@ const pointers = new Map();
 let gesture = null;
 const phaseNames = [
   "Survey the woodland",
-  "Prepare a living soil",
+  "Prepare the soil for planting",
   "Plant shop",
   "Mulch & water",
   "Tend & observe",
@@ -102,12 +103,20 @@ function toast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $("toast").classList.remove("show"), 5000);
 }
-function panel(html) {
+let panelReturn = null;
+function panel(html, onClose = null) {
+  panelReturn = onClose;
+  $("panel").classList.remove("shop-panel");
   $("panelContent").innerHTML = html;
   if (!$("panel").open) $("panel").showModal();
   hideTooltip();
 }
 $("closePanel").onclick = () => $("panel").close();
+$("panel").addEventListener("close", () => {
+  const back = panelReturn;
+  panelReturn = null;
+  back?.();
+});
 function nativeText(sp) {
   return sp.native === true
     ? "Native to the region"
@@ -145,6 +154,7 @@ function inspect(p, touch = false) {
     } else openPlantNote(p);
   } else if (!p.planted) {
     selected = p;
+    selectedSpecies = p.sid;
     view.selected = p;
     view.updateGhosts();
     updateSelection();
@@ -155,14 +165,19 @@ function inspect(p, touch = false) {
   } else openPlantNote(p);
 }
 function openPlantNote(p) {
+  const sp = byId(p.sid);
+  const recorded = state.survey.includes(sp.id);
   panel(
-    entry(byId(p.sid)) +
+    entry(sp) +
       `<p>Health <strong>${Math.round(p.health)}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m${!p.wild ? ` · light ${Math.round((p.light ?? 1) * 100)}%<br>Root-zone moisture ${Math.round(cellAt(state, p.x, -0.3).m)}%` : ""}</p>` +
-      (state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
+      (recorded
+        ? '<button class="notebook-added" disabled>✓ Added to Notebook</button>'
+        : state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
   );
   if ($("addNote")) $("addNote").onclick = () => {
     recordSurvey(p);
     $("panel").close();
+    toast(`Added ${sp.name} to notebook.`);
   };
 }
 function formatAge(age) {
@@ -197,7 +212,7 @@ function showSoilTooltip(sample, x, y) {
   el.style.left = clamp(x + 15, 8, innerWidth - 230) + "px";
   el.style.top = clamp(y + 19, 10, innerHeight - 110) + "px";
 }
-$("notebook").onclick = () => {
+function openNotebook() {
   panel(
     `<span class="eyebrow">${state.surveyPlants.length} individual plants surveyed</span><h2>Field notebook</h2><p>${state.survey.length} species and references. Every visible tree, shrub and herb can be surveyed. Weed entries are additional named references, not photo identifications.</p>${
       state.survey
@@ -211,69 +226,68 @@ $("notebook").onclick = () => {
   );
   document
     .querySelectorAll("[data-note]")
-    .forEach((b) => (b.onclick = () => panel(entry(byId(b.dataset.note)))));
-};
-const thumbnails = new Map();
-function plantThumbnail(sp) {
-  if (thumbnails.has(sp.id)) return thumbnails.get(sp.id);
-  const recipe = makeArchitecture(sp, 42);
-  const pose = poseArchitecture(recipe, 1.5);
-  const scale = 72 / Math.max(2, sp.height);
-  const unit = scale * sp.height / Math.max(...pose.map(n => n.b.y));
-  const x = n => (49 + n.x * unit).toFixed(1);
-  const y = n => (80 - n.y * unit).toFixed(1);
-  const branches = pose.map((n, i) =>
-    `<path d="M${x(n.a)} ${y(n.a)}L${x(n.b)} ${y(n.b)}" stroke-width="${Math.max(0.5, recipe.nodes[i].width * unit)}"/>`
-  ).join("");
-  const leaves = recipe.leaves.map(l => {
-    const a = leafAttachment(l, pose);
-    return `<ellipse cx="${x(a.tip)}" cy="${y(a.tip)}" rx="2" ry="1.25" transform="rotate(${Math.round(a.angle * 57)} ${x(a.tip)} ${y(a.tip)})"/>`;
-  }).join("");
-  const svg = `<svg class="shop-thumbnail" viewBox="0 0 104 88" role="img" aria-label="Mature ${sp.name} beside a 1.9 meter farmer">
-    <path d="M0 80H104" stroke="#72896b"/>
-    <g fill="none" stroke="#9e7956" stroke-linecap="round">${branches}</g>
-    <g fill="#${sp.color.toString(16).padStart(6, "0")}">${leaves}</g>
-    <g transform="translate(82 80) scale(${scale} -${scale})">
-      <path d="M-.2 0h.17v.7h-.17zm.23 0h.17v.7H.03z" fill="#5c6054"/>
-      <path d="M-.22 .65h.44v.65h-.44zM-.35 .77h.13v.46h-.13zm.57 0h.13v.46H.22z" fill="#83a16a"/>
-      <path d="M-.2 1.3h.4v.44h-.4z" fill="#d3ae86"/>
-      <path d="M-.3 1.74h.6v.09h-.6zm.11 .09h.38v.09h-.38z" fill="#dbbd78"/>
-    </g></svg>`;
-  thumbnails.set(sp.id, svg);
-  return svg;
+    .forEach(b => b.onclick = () => panel(entry(byId(b.dataset.note)), openNotebook));
 }
+$("notebook").onclick = openNotebook;
 function shop() {
+  const plants = state.survey.map(byId).filter(sp => sp && sp.type !== "weed").sort((a, b) => a.height - b.height);
   panel(
-    `<header class="shop-heading"><h2>Plant shop</h2><strong>¥${state.budget.toLocaleString()}</strong></header>
-    ${state.survey.map(byId).filter(s => s && s.type !== "weed").map(s =>
-      `<div class="entry shop-entry">${plantThumbnail(s)}<div><h3>${s.name} <strong>${s.height} m</strong></h3><p>${s.native === true ? "Native" : s.native === false ? "Introduced" : "Status unresolved"} · ${layers[s.layer]}</p></div><button data-buy="${s.id}" ${state.budget < s.price ? "disabled" : ""}>¥${s.price} · Buy</button></div>`
-    ).join("")}`,
+    `<header class="shop-heading"><h2>🌱 Plant shop</h2><strong>¥${state.budget.toLocaleString()}</strong></header>
+    <div class="shop-list">${plants.map(sp =>
+      `<div class="entry shop-entry"><img class="shop-thumbnail" src="${view.plantThumbnail(sp)}" alt="Mature ${sp.name} beside the farmer"><div><h3>${sp.name} <strong>${sp.height} m</strong></h3><p>${sp.native === true ? "Native" : sp.native === false ? "Introduced" : "Status unresolved"} · ${layers[sp.layer]}</p></div><button data-buy="${sp.id}" ${state.budget < sp.price ? "disabled" : ""}>¥${sp.price.toLocaleString()} · Select</button></div>`
+    ).join("")}</div>`,
   );
-  document.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => buy(b.dataset.buy));
+  $("panel").classList.add("shop-panel");
+  document.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => selectSpecies(b.dataset.buy));
 }
-function buy(id) {
+function cancelSeedling() {
+  if (selected && !selected.planted) {
+    if (selected.paid !== false) state.budget += legacySeedPrices[selected.sid] ?? 0;
+    state.plants = state.plants.filter(p => p !== selected);
+  }
+  selected = null;
+  selectedSpecies = null;
+  view.selected = null;
+  highlight(null);
+  view.sync();
+  updateUI();
+  save();
+}
+function selectSpecies(id) {
   const sp = byId(id);
   if (state.budget < sp.price) return;
   if (sp.native === false && !state.warned.nonNative) {
-    state.warned.nonNative = true;
-    panel(
-      `<h2>A visitor from elsewhere</h2><p>${sp.name} is introduced to Japan. Non-native species can compete for resources and support different wildlife. Non-native does not automatically mean invasive; locally appropriate natives are the starting point for restoration.</p><button id="buyAnyway" class="primary">Buy anyway · ¥${sp.price}</button>`,
-    );
-    $("buyAnyway").onclick = () => buy(id);
+    panel(`<h2>A visitor from elsewhere</h2><p>${sp.name} is introduced to Japan. Introduced plants can compete for resources and support different wildlife.</p><button id="buyAnyway" class="primary">Select ${sp.name}</button>`, shop);
+    $("buyAnyway").onclick = () => {
+      state.warned.nonNative = true;
+      selectSpecies(id);
+    };
     return;
   }
-  state.budget -= sp.price;
+  if (selected && !selected.planted) cancelSeedling();
+  selectedSpecies = id;
+  const x = clamp(view.center.x + ((state.plants.length % 5) - 2) * 0.55, -HALF + 0.3, HALF - 0.3);
+  startSeedling(x);
+  panelReturn = null;
+  $("panel").close();
+}
+function startSeedling(x) {
+  const sp = byId(selectedSpecies);
+  if (!sp || state.budget < sp.price) {
+    toast("There isn’t enough budget for another seedling.");
+    return;
+  }
   const p = {
     id: "p" + Date.now() + Math.floor(Math.random() * 1000),
-    sid: id,
-    x: clamp(view.center.x + ((state.plants.length % 5) - 2) * 0.65, -9.5, 9.5),
-    z: 1,
-    age: 0,
+    sid: sp.id,
+    x: clamp(x, -HALF + 0.3, HALF - 0.3),
+    z: 2.45,
+    age: 45 / 365,
     health: 95,
-    biomass: 0,
-    seed: state.plants.length + 23,
+    biomass: Math.min(0.22, sp.height * 0.12),
     planted: false,
-    drop: 0,
+    paid: false,
+    seed: state.plants.length + 23,
     roots: [],
     tips: [],
   };
@@ -281,7 +295,6 @@ function buy(id) {
   selected = p;
   view.selected = p;
   view.target = p.x;
-  $("panel").close();
   view.sync();
   highlight(p);
   updateUI();
@@ -307,14 +320,14 @@ function updateSelection() {
   $("seedLeft").hidden = $("seedRight").hidden = !arranging;
   if (arranging) {
     el.style.display = "block";
-    el.innerHTML = `${byId(selected.sid).name} · Plant here?<br><button id="plantYes" class="primary">Yes, plant here</button> <button id="plantLater">Keep arranging</button>`;
+    el.innerHTML = `${byId(selected.sid).name} · Plant here?<br><button id="plantYes" class="primary">Plant</button> <button id="plantLater">Cancel</button>`;
     $("plantYes").onclick = confirmPlant;
-    $("plantLater").onclick = () => {
-      selected = null;
-      view.selected = null;
-      view.updateGhosts();
-      updateSelection();
-    };
+    $("plantLater").onclick = cancelSeedling;
+  } else if (selectedSpecies && state.phase === 2) {
+    el.style.display = "block";
+    const sp = byId(selectedSpecies);
+    el.innerHTML = `${sp.name} selected · ¥${sp.price.toLocaleString()}<br><small>Tap the plot to place another seedling.</small><br><button id="plantLater">Cancel</button>`;
+    $("plantLater").onclick = cancelSeedling;
   } else el.style.display = "none";
 }
 function confirmPlant() {
@@ -342,13 +355,23 @@ function confirmPlant() {
       "Similar-height neighbors can compete later. Nearby mixed layers also shelter seedlings and help retain moisture.",
     );
   }
+  if (p.paid === false) {
+    if (state.budget < sp.price) {
+      toast("There isn’t enough budget for this seedling.");
+      return;
+    }
+    state.budget -= sp.price;
+    p.paid = true;
+  }
   p.planted = true;
+  selectedSpecies = sp.id;
   p.drop = 0;
   selected = null;
   view.selected = null;
   highlight(null);
   view.sync();
   updateUI();
+  toast(`${sp.name} planted successfully.`);
   save();
 }
 function action(text, fn, cls = "") {
@@ -362,21 +385,14 @@ function action(text, fn, cls = "") {
 function updateUI() {
   const p = state.phase;
   const surveyed = state.survey.filter(id => byId(id)?.type !== "weed").length;
-  $("phaseTitle").textContent = p === 0 ? `${phaseNames[p]} · ${Math.min(5, surveyed)} out of 5` : phaseNames[p];
-
-  $("steps").innerHTML = phaseNames
-    .slice(0, 6)
-    .map(
-      (_, i) =>
-        `<span class="${i < p ? "done" : i === p ? "active" : ""}"></span>`,
-    )
-    .join("");
+  $("phaseTitle").textContent = p === 0 && surveyed < 5 ? `${phaseNames[p]} · ${surveyed} out of 5` : phaseNames[p];
+  $("back").disabled = p === 0;
   $("actions").innerHTML = "";
   const n = $("next");
   n.hidden = false;
   n.disabled = false;
   if (p === 0) {
-    n.textContent = "Next · Prepare →";
+    n.textContent = "Prepare soil";
     n.disabled = surveyed < 5;
   }
   if (p === 1) {
@@ -392,13 +408,13 @@ function updateUI() {
       state.plants.some((p) => !p.planted);
   }
   if (p === 3) {
-    action("Mulch bag", () => setTool("mulch"), tool === "mulch" ? "active-tool" : "").id = "mulchBag";
-    action("Watering can", () => setTool("water"), tool === "water" ? "active-tool" : "");
+    action("Mulch bag · ¥15", () => setTool("mulch"), tool === "mulch" ? "active-tool" : "");
+    action("Watering can · ¥5", () => setTool("water"), tool === "water" ? "active-tool" : "");
     n.textContent = "Begin tending →";
   }
   if (p === 4 || p === 6) {
     action(
-      "Watering can",
+      "Watering can · ¥5",
       () => setTool("water"),
       tool === "water" ? "active-tool" : "",
     );
@@ -407,13 +423,15 @@ function updateUI() {
         tool = null;
         updateUI();
       });
-    n.hidden = true;
+    action("Compost bag · ¥25", () => setTool("compost"), tool === "compost" ? "active-tool" : "");
+    n.hidden = p === 6;
+    n.textContent = "Forest review →";
+    n.disabled = !state.review;
   }
   if (p === 5) {
     action("View review", showReview);
     n.textContent = "Continue growing →";
   }
-  $("steps").hidden = p === 6;
   $("timeline").hidden = ![4, 6].includes(p);
   $("progress").hidden = p !== 4;
   $("remaining").hidden = p !== 4;
@@ -421,13 +439,24 @@ function updateUI() {
   updateStats();
 }
 function updateStats() {
-  if ($("mulchBag")) $("mulchBag").textContent = `Mulch bag · ${Math.ceil(state.mulchSupply ?? 100)}%`;
   $("money").textContent = "¥" + state.budget.toLocaleString();
   $("count").textContent = state.survey.length;
   const avg = (key) =>
     Math.round(state.soil.reduce((a, c) => a + c[key], 0) / state.soil.length);
   $("moisture").textContent = avg("m") + "%";
   $("nutrients").textContent = avg("n") + "%";
+  if (state.phase === 4 || state.phase === 6) {
+    const surface = state.soil.slice(0, COLS * 3);
+    const rootZoneMoisture = surface.reduce((sum, cell) => sum + cell.m, 0) / surface.length;
+    const rootZoneNutrients = surface.reduce((sum, cell) => sum + cell.n, 0) / surface.length;
+    const advice = [];
+    if (rootZoneMoisture < 38) advice.push("Water the soil.");
+    if (state.weeds.length) advice.push("Pull the weeds.");
+    if (rootZoneNutrients < 40) advice.push("Add compost to the soil.");
+    $("phaseTitle").textContent = advice.length
+      ? advice[Math.floor(performance.now() / 5500) % advice.length]
+      : phaseNames[state.phase];
+  }
   $("moistureMeter").value = avg("m");
   $("nutrientMeter").value = avg("n");
   $("weather").textContent = ["Spring", "Summer", "Autumn", "Winter"][
@@ -452,24 +481,33 @@ function updateStats() {
   $("timeScale").value = state.speed;
   $("speeds").hidden = ![4, 6].includes(state.phase);
 }
-function advance() {
-  if (state.phase === 5) {
-    state.phase = 6;
-    state.speed = 1;
-  } else state.phase++;
-  selected = null;
-  view.selected = null;
+function enterPhase(phase) {
+  const firstVisit = phase > (state.reachedPhase ?? state.phase);
+  state.phase = phase;
+  state.reachedPhase = Math.max(phase, state.reachedPhase ?? phase);
+  selected = phase === 2 ? state.plants.find(p => !p.planted) ?? null : null;
+  selectedSpecies = selected?.sid ?? null;
+  view.selected = selected;
   tool = null;
-  view.plot();
-  view.sync();
-  updateUI();
-  if (state.phase === 2) shop();
-  if (state.phase === 4) {
-    state.speed = 1;
-    toast("Watch your plants grow, water them, and pick weeds.");
+  applying = false;
+  view.target = 0;
+  if (phase !== 0 && Math.abs(view.farmerX) > HALF - 0.55) {
+    view.farmerX = clamp(view.farmerX, -HALF + 0.55, HALF - 0.55);
   }
+  view.plot(true);
+  view.sync();
+  if (firstVisit && (phase === 4 || phase === 6)) state.speed = 1;
+  updateUI();
+  if (phase === 2 && firstVisit) shop();
+  if (phase === 5 && state.review) showReview();
   save();
 }
+function advance() {
+  if (state.phase < 6) enterPhase(state.phase + 1);
+}
+$("back").onclick = () => {
+  if (state.phase > 0) enterPhase(state.phase - 1);
+};
 $("next").onclick = () => {
   if ($("next").disabled) return;
   if (state.phase === 1 && !state.prep.every(Boolean)) {
@@ -482,52 +520,48 @@ $("next").onclick = () => {
 function setTool(t) {
   tool = tool === t ? null : t;
   toolActionUntil = 0;
+  nextToolAt = 0;
   applying = false;
-  lastToolX = null;
-  if (tool) view.plot();
-  if (tool === "mulch" && state.mulchSupply === 0) state.mulchSupply = 100;
+  if (tool === "drainage") view.plot(true);
+  else view.cameraMove = null;
   hideTooltip();
   highlight(null);
   updateUI();
 }
-function applyAt(x) {
-  if (Math.abs(x) > HALF) return;
+function applyAt(point) {
+  const { x, y } = point;
+  const now = performance.now();
+  if (Math.abs(x) > HALF || now < nextToolAt) return;
+  if (tool === "drainage" && (y > 0.62 || y < -0.35 || view.cameraMove)) return;
   if (tool === "drainage" && !state.prep[0]) {
     if (state.budget < 400) { toast("Drainage costs ¥400."); return; }
     state.budget -= 400;
     state.prep[0] = true;
     updateUI();
   }
-  if (tool === "compost" && !state.warned.compostSupply) {
+  if (tool === "compost" && state.phase === 1 && !state.warned.compostSupply) {
     const cost = (state.prep[1] ? 0 : 800) + (state.prep[2] ? 0 : 400);
     if (state.budget < cost) { toast(`The compost mix costs ¥${cost.toLocaleString()}.`); return; }
     state.budget -= cost;
     state.warned.compostSupply = true;
-    updateStats();
   }
-  toolActionUntil = performance.now() + 260;
-  const start = lastToolX ?? x;
-  const n = Math.max(1, Math.ceil(Math.abs(x - start) / (CW * 0.7)));
-  for (let i = 1; i <= n; i++) {
-    const px = start + ((x - start) * i) / n;
-    if (tool === "drainage") {
-      prepareSoilAt(state, px, tool);
-      view.spawn("dig", px, 0.12, 5);
-    } else if (tool === "compost") view.spawn("compost", px, 0.85, 6);
-    else if (tool === "mulch") {
-      state.mulchSupply = Math.max(0, (state.mulchSupply ?? 100) - 1);
-      view.spawn("mulch", px, 0.75, 5);
-      if (state.mulchSupply === 0) {
-        tool = null;
-        applying = false;
-        toast("Mulch bag empty. Tap the bag button to refill it.");
-        updateUI();
-        break;
-      }
-    } else if (tool === "water") view.spawn("water", px, 0.95, 5);
+  const price = tool === "compost" && state.phase === 1 ? 0 : (supplyPrices[tool] ?? 0);
+  if (state.budget < price) {
+    toast(`Each application costs ¥${price}.`);
+    applying = false;
+    return;
   }
-  lastToolX = x;
+  state.budget -= price;
+  nextToolAt = now + (tool === "mulch" ? 480 : tool === "compost" ? 280 : 230);
+  toolActionUntil = now + 210;
+  if (tool === "drainage") {
+    prepareSoilAt(state, x, tool);
+    view.spawn("dig", x, 0.13, 6);
+  } else {
+    view.pour(tool, pointer, x);
+  }
   view.target = x;
+  updateStats();
 }
 function clearWeeds(weeds) {
   if (!weeds.length) return;
@@ -571,10 +605,7 @@ function showReview() {
   );
   $("continueReview").onclick = () => {
     $("panel").close();
-    state.phase = 6;
-    state.speed = 1;
-    updateUI();
-    save();
+    enterPhase(6);
   };
 }
 function updateWeedAlerts() {
@@ -621,7 +652,6 @@ world.addEventListener("pointerdown", (e) => {
   world.setPointerCapture(e.pointerId);
   if (pointers.size === 2) {
     applying = false;
-    lastToolX = null;
     const [a, b] = [...pointers.values()];
     gesture = {
       multi: true,
@@ -637,8 +667,8 @@ world.addEventListener("pointerdown", (e) => {
       e.clientY,
       e.pointerType === "touch" ? 24 : 12,
     ),
-    point = view.worldPoint(e.clientX, e.clientY, tool ? 3.05 : 1);
-  view.target = point.x;
+    point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 1);
+  if (!tool) view.target = point.x;
   if (!tool && point.y < 0) {
     const soil = view.inspectSoil(e.clientX, e.clientY);
     if (soil) showSoilTooltip(soil, e.clientX, e.clientY);
@@ -655,21 +685,21 @@ world.addEventListener("pointerdown", (e) => {
   };
   if (gesture.plant) {
     selected = gesture.plant;
+    selectedSpecies = selected.sid;
     view.selected = selected;
     view.updateGhosts();
     updateSelection();
   }
   if (tool && Math.abs(point.x) <= HALF) {
     applying = true;
-    lastToolX = null;
-    applyAt(point.x);
+    applyAt(point);
   }
 });
 world.addEventListener("pointermove", (e) => {
   pointer = { x: e.clientX, y: e.clientY };
   if (!pointers.has(e.pointerId)) {
-    if (e.pointerType !== "touch" && !tool) {
-      const insect = view.insectAt(e.clientX, e.clientY);
+    if (e.pointerType !== "touch") {
+      const insect = !tool && view.insectAt(e.clientX, e.clientY);
       if (insect) {
         highlight(null);
         hideTooltip();
@@ -685,7 +715,7 @@ world.addEventListener("pointermove", (e) => {
         highlight(null);
         showSoilTooltip(soil, e.clientX, e.clientY);
       } else {
-        const p = view.hit(e.clientX, e.clientY);
+        const p = tool ? null : view.hit(e.clientX, e.clientY);
         highlight(p);
         showTooltip(p, e.clientX, e.clientY);
       }
@@ -711,11 +741,11 @@ world.addEventListener("pointermove", (e) => {
     dy = e.clientY - gesture.lastY;
   if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 6)
     gesture.moved = true;
-  const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.05 : 1);
+  const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 1);
   if (gesture.plant) {
     if (gesture.moved) positionSeedling(gesture.plant, point.x);
   } else if (tool && applying) {
-    if (tool !== "drainage") applyAt(point.x);
+    if (tool !== "drainage") applyAt(point);
   } else if (gesture.moved && !tool) {
     view.pan(dx, dy);
     hideTooltip();
@@ -730,10 +760,12 @@ function endPointer(e) {
     return;
   }
   applying = false;
-  lastToolX = null;
-  if (gesture && !gesture.moved && !gesture.multi && !tool && state.phase === 2 && selected && !gesture.plant) {
+  if (gesture && !gesture.moved && !gesture.multi && !tool && state.phase === 2 && selectedSpecies && !gesture.plant) {
     const point = view.worldPoint(e.clientX, e.clientY);
-    if (Math.abs(point.x) <= HALF) positionSeedling(selected, point.x);
+    if (Math.abs(point.x) <= HALF) {
+      if (selected) positionSeedling(selected, point.x);
+      else startSeedling(point.x);
+    }
   } else if (gesture && !gesture.moved && !gesture.multi && !tool && gesture.hit) {
     if (gesture.touch && pendingTreeTap?.id === gesture.hit.id) {
       openPlantNote(gesture.hit);
@@ -825,7 +857,7 @@ bin.addEventListener(
   true,
 );
 bin.addEventListener("pointercancel", () => (binDrag = null));
-$("home").onclick = () => view.plot();
+$("home").onclick = () => { if (!tool) view.plot(true); };
 window.addEventListener("resize", () => view.resize());
 window.addEventListener("keydown", (e) => {
   if ($("panel").open) return;
@@ -883,13 +915,8 @@ function frame(ms) {
   const dt = Math.min(0.06, (ms - lastTime) / 1000 || 0.016);
   lastTime = ms;
   hydrology(state, dt);
-  if (applying && tool) {
-    toolAccumulator += dt;
-    if (toolAccumulator > 0.1) {
-      const p = view.worldPoint(pointer.x, pointer.y, 3.05);
-      if (tool !== "drainage") applyAt(p.x);
-      toolAccumulator = 0;
-    }
+  if (applying && tool && tool !== "drainage" && ms >= nextToolAt) {
+    applyAt(view.worldPoint(pointer.x, pointer.y, 3.02));
   }
   for (const x of view.pendingWater.splice(0)) {
     addWater(state, x, 1.6);
@@ -911,24 +938,20 @@ function frame(ms) {
       state.soil[c].mulch = clamp(state.soil[c].mulch + 0.12);
   }
   for (const x of view.pendingCompost.splice(0)) {
-    if (state.phase !== 1) continue;
-    const first = !state.prep[2];
+    const first = state.phase === 1 && !state.prep[2];
     prepareSoilAt(state, x, "compost");
     if (first) updateUI();
   }
-  if ([4, 6].includes(state.phase)) {
+  if (state.phase === 6 || (state.phase === 4 && !state.review)) {
     simAccumulator += dt * state.speed;
     let steps = 0;
     while (simAccumulator >= 1 && steps++ < 2) {
       simAccumulator--;
       const review = stepDay(state, (x, y, id) => view.exposure(x, y, id));
-      if (state.day % 365 === 274)
-        for (const p of state.plants)
-          if (p.planted && byId(p.sid).deciduous)
-            view.spawn("leaf", p.x, plantHeight(p) * 0.65, 8);
       if (state.day % 3 === 0) view.sync();
       if (review) {
         state.phase = 5;
+        state.reachedPhase = Math.max(state.reachedPhase ?? 0, 5);
         state.speed = 1 / 86400;
         state.review = score(state);
         view.sync();
@@ -991,6 +1014,12 @@ document.addEventListener("visibilitychange", () => {
     save();
   }
 });
+if (state.phase === 2) {
+  selected = state.plants.find(p => !p.planted) ?? null;
+  selectedSpecies = selected?.sid ?? null;
+  view.selected = selected;
+  view.updateGhosts();
+}
 updateUI();
 view.plot();
 requestAnimationFrame(frame);
