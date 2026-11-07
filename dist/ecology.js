@@ -59,10 +59,11 @@ export function sampleSoil(s, x, y = 0, create = false) {
   return cell;
 }
 export function soilColorHSL(cell) {
+  const nutrients = clamp(cell.n / 100);
   return {
     h: 0.074,
-    s: 0.24 + clamp(cell.n / 100) * 0.48,
-    l: 0.12 - clamp(cell.m / 100) * 0.08,
+    s: 0.24 + nutrients * 0.36,
+    l: 0.15 - nutrients * 0.09 - clamp(cell.m / 100) * 0.035,
   };
 }
 export function rootThickness(segment) {
@@ -84,6 +85,7 @@ export function freshState() {
     plants: [],
     weeds: [],
     mushrooms: [],
+    worms: [],
     day: 0,
     speed: 1,
     prep: [false, false, false],
@@ -157,6 +159,7 @@ export function migrate(saved) {
       saved.soilVariation = 1;
     }
     saved.extraSoil ??= {};
+    saved.worms ??= [];
     const ratio = (HALF * 2) / (saved.plotWidth ?? 20);
     if (ratio !== 1) {
       for (const p of [...saved.plants, ...saved.weeds]) {
@@ -217,6 +220,10 @@ export function migrate(saved) {
 }
 export const colAt = (x) => clamp(Math.floor((x + HALF) / CW), 0, COLS - 1);
 export const cellAt = (s, x, y = 0) => sampleSoil(s, x, y, true);
+export function plantSoilCells(state, plant, create = false) {
+  const roots = plant.tips?.length ? plant.tips : [{ x: plant.x, y: -0.08 }];
+  return [...new Set(roots.map(tip => sampleSoil(state, tip.x, tip.y, create)))];
+}
 export const plantHeight = (p) => {
   const sp = getSpecies(p.sid);
   return p.wild
@@ -394,6 +401,47 @@ export function returnWeedToSoil(s, weed) {
     cell.litter += (1.5 + (weed.biomass || 0.5)) * (1 - Math.abs(offset) * 0.2);
   }
 }
+export const WORM_LIMIT = 8;
+const wormRows = 9;
+export function stepWorms(state) {
+  const { worms, soil, day } = state;
+  if (day % 16 === 0 && worms.length < WORM_LIMIT) {
+    const habitat = soil.slice(0, COLS * 3).flatMap((cell, index) => {
+      const col = index % COLS, row = Math.floor(index / COLS);
+      return cell.n >= 53 && cell.m >= 34 && cell.m <= 88 &&
+        !worms.some(worm => Math.abs(worm.col - col) < 4) ? [{ col, row }] : [];
+    });
+    if (habitat.length) {
+      const start = habitat[Math.floor(random(day * 4.3) * habitat.length)];
+      worms.push({ ...start, id: day, cargo: 0 });
+    }
+  }
+  for (const worm of worms) {
+    const source = soil[worm.row * COLS + worm.col];
+    if (worm.cargo === 0 && source.n >= 49) {
+      const load = Math.min(1.8, (source.n - 47) * 0.12);
+      source.n -= load;
+      worm.cargo += load;
+    }
+    const choices = [];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const col = worm.col + dx, row = worm.row + dy;
+        if ((!dx && !dy) || col < 0 || col >= COLS || row < 0 || row >= wormRows) continue;
+        const cell = soil[row * COLS + col];
+        const noise = random(day * 13.7 + worm.id * 9.1 + row * 33 + col * 1.9);
+        const forage = worm.cargo === 0 ? (cell.n - source.n) * 0.05 : 0;
+        choices.push({ col, row, dx, dy, weight: noise + forage });
+      }
+    const next = choices.reduce((best, candidate) => candidate.weight > best.weight ? candidate : best);
+    Object.assign(worm, { col: next.col, row: next.row, dx: next.dx, dy: next.dy });
+    const target = soil[worm.row * COLS + worm.col];
+    const deposit = Math.min(worm.cargo, 100 - target.n, 0.24);
+    target.n += deposit;
+    worm.cargo -= deposit;
+  }
+}
+
 export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   s.day++;
   const summer = Math.floor((s.day % 365) / 91.25) === 1,
@@ -423,8 +471,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     p.age = (p.age || 0) + 1 / 365;
     const e = exposure(p.x, plantHeight(p) * 0.72, p.id);
     p.light = e.light;
-    const roots = p.tips?.length ? p.tips : [{ x: p.x, y: -0.08 }],
-      samples = [...new Set(roots.map(t => cellAt(s, t.x, t.y)))];
+    const samples = plantSoilCells(s, p, true);
     const m = samples.reduce((a, c) => a + c.m, 0) / samples.length,
       n = samples.reduce((a, c) => a + c.n, 0) / samples.length;
     const neighbors = s.plants.filter(
@@ -512,7 +559,6 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
           id: "w" + s.day + "-" + attempt,
           sid: attempt ? "grass" : "forb",
           x,
-          z: 2.8,
           age: 0,
           health: 100,
           biomass: 0.05,
@@ -536,6 +582,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
         until: s.day + 40 + Math.floor(random(s.day + 1) * 35),
       });
   }
+  stepWorms(s);
   return s.day >= 1095 && s.phase === 4;
 }
 export function score(s) {

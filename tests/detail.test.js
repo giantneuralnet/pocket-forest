@@ -8,15 +8,19 @@ import {
   HALF,
   TIME_RATES,
   rootThickness,
+  stepWorms,
+  COLS,
+  migrate,
+  packState,
 } from "../dist/ecology.js";
 import { makeArchitecture } from "../dist/architecture.js";
 import { getSpecies } from "../dist/ecology.js";
-test("soil nutrients control saturation and moisture controls darkness", () => {
+test("nutrients darken soil and increase saturation while moisture also darkens it", () => {
   const poor = soilColorHSL({ m: 40, n: 10 }),
     rich = soilColorHSL({ m: 40, n: 90 }),
     wet = soilColorHSL({ m: 90, n: 10 });
   assert.ok(rich.s > poor.s);
-  assert.equal(rich.l, poor.l);
+  assert.ok(poor.l - rich.l > 0.05);
   assert.ok(wet.l < poor.l);
   assert.equal(wet.s, poor.s);
 });
@@ -64,8 +68,7 @@ test("trunk widths taper toward the top while leaves retain branch anchors", () 
   assert.ok(tree.leaves.every((l) => tree.nodes[l.branch]));
 });
 
-test("compact saves restore root paths and remain small for a dense forest", async () => {
-  const { packState, migrate } = await import("../dist/ecology.js");
+test("compact saves restore root paths and remain small for a dense forest", () => {
   const s = freshState();
   s.plants = Array.from({ length: 60 }, (_, i) => ({
     id: "p" + i,
@@ -145,4 +148,25 @@ test("the narrower plot moves saved plants and roots into the new bounds once", 
   assert.ok(Math.abs(migratedX - 6) < 1e-9);
   assert.ok(updated.plants[0].roots[0].b[0] < HALF);
   assert.equal(migrate(updated).plants[0].x, migratedX);
+});
+
+test("worms seek a rich patch, then spread its nutrients without creating new ones", () => {
+  const state = freshState();
+  for (const cell of state.soil) cell.n = 20;
+  const rich = state.soil[COLS + 11];
+  rich.n = 90;
+  state.worms.push({ id: 1, col: 10, row: 1, cargo: 0 });
+  state.day = 17;
+  const total = state.soil.reduce((sum, cell) => sum + cell.n, 0);
+  stepWorms(state);
+  assert.equal(state.worms[0].col, 11);
+  assert.equal(state.worms[0].row, 1);
+  state.day++;
+  stepWorms(state);
+  assert.ok(rich.n < 90);
+  assert.ok(state.soil.some(cell => cell !== rich && cell.n > 20));
+  const restored = migrate(JSON.parse(packState(state)));
+  assert.deepEqual(restored.worms, state.worms);
+  const transferred = restored.soil.reduce((sum, cell) => sum + cell.n, restored.worms[0].cargo);
+  assert.ok(Math.abs(total - transferred) < 1e-8);
 });

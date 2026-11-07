@@ -8,11 +8,11 @@ import {
   clamp,
   random,
   getSpecies,
-  cellAt,
   colAt,
   freshState,
   migrate,
   plantHeight,
+  plantSoilCells,
   hydrology,
   addWater,
   stepDay,
@@ -179,13 +179,24 @@ function inspect(p, touch = false) {
     showTooltip(p, pointer.x, pointer.y, true);
   } else openPlantNote(p);
 }
+function plantReadings(p) {
+  const cells = plantSoilCells(state, p);
+  const mean = key => Math.round(cells.reduce((sum, cell) => sum + cell[key], 0) / cells.length);
+  return {
+    health: Math.round(p.health ?? 100),
+    moisture: mean("m"),
+    nutrients: mean("n"),
+    light: Math.round(100 * (p.light ?? view.exposure(p.x, plantHeight(p) * 0.72, p.id).light)),
+  };
+}
 function openPlantNote(p) {
   const sp = byId(p.sid);
   const recorded = state.survey.includes(sp.id);
+  const { health, moisture, nutrients, light } = plantReadings(p);
   panel(
     entry(sp) +
       (p.health === 0 ? `<p class="death-note"><strong>Cause of death</strong><br>${p.deathReason || "Unknown. This save predates cause-of-death tracking."}</p>` : "") +
-      `<p>Health <strong>${Math.round(p.health)}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m${!p.wild ? ` · light ${Math.round((p.light ?? 1) * 100)}%<br>Root-zone moisture ${Math.round(cellAt(state, p.x, -0.3).m)}%` : ""}</p>` +
+      `<p>Health <strong>${health}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m<br>Root-zone moisture ${moisture}% · nutrients ${nutrients}%<br>Light ${light}%</p>` +
       (recorded
         ? '<button class="notebook-added" disabled>✓ Added to Notebook</button>'
         : state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
@@ -196,10 +207,10 @@ function openPlantNote(p) {
     toast(`Added ${sp.name} to notebook.`);
   };
 }
-function formatAge(age) {
+function formatAge(age = 0) {
   return age < 1
-    ? `${Math.floor((age || 0) * 365)} days`
-    : `${(age || 0).toFixed(1)} years`;
+    ? `${Math.floor(age * 365)} days`
+    : `${age.toFixed(1)} years`;
 }
 function hideTooltip() {
   $("tooltip").style.display = "none";
@@ -216,10 +227,11 @@ function showTooltip(p, x, y, touch = false) {
   }
   const sp = byId(p.sid),
     el = $("tooltip");
-  el.innerHTML = `<strong>${sp.name}</strong><small>${Math.round(p.health ?? 100)}% health · ${formatAge(p.age)}<br>${sp.type === "weed" ? "Tap to pull out" : p.wild ? (state.surveyPlants.includes(p.id) ? "Recorded · tap to inspect" : "Tap to survey") : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant"}</small>`;
+  const { health, moisture, nutrients, light } = plantReadings(p);
+  el.innerHTML = `<strong>${sp.name} · ${formatAge(p.age)}</strong><small>Health <b>${health}%</b><br>Moisture <b>${moisture}%</b> · Nutrients <b>${nutrients}%</b><br>Light <b>${light}%</b><br>${sp.type === "weed" ? "Tap to pull out" : p.wild ? (state.surveyPlants.includes(p.id) ? "Recorded · tap to inspect" : "Tap to survey") : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant"}</small>`;
   el.style.display = "block";
-  el.style.left = clamp(x + 15, 8, innerWidth - 245) + "px";
-  el.style.top = clamp(y + 19, 10, innerHeight - 105) + "px";
+  el.style.left = clamp(x + 15, 8, innerWidth - el.offsetWidth - 8) + "px";
+  el.style.top = clamp(y + 19, 10, innerHeight - el.offsetHeight - 8) + "px";
 }
 function showSoilTooltip(sample, x, y) {
   const el = $("tooltip");
@@ -434,11 +446,6 @@ function updateUI() {
       () => setTool("water"),
       tool === "water" ? "active-tool" : "",
     );
-    if (tool)
-      action("Put away", () => {
-        tool = null;
-        updateUI();
-      });
     action("Compost bag · ¥25", () => setTool("compost"), tool === "compost" ? "active-tool" : "");
     n.hidden = p === 6;
     n.textContent = "Forest review →";
@@ -448,6 +455,7 @@ function updateUI() {
     action("View review", showReview);
     n.textContent = "Continue growing →";
   }
+  $("stageBin").hidden = !$("actions").childElementCount;
   $("timeline").hidden = ![4, 6].includes(p);
   $("progress").hidden = p !== 4;
   $("remaining").hidden = p !== 4;
@@ -584,7 +592,7 @@ function applyAt(point) {
     return;
   }
   state.budget -= price;
-  nextToolAt = now + (tool === "mulch" ? 320 : tool === "compost" ? 240 : 190);
+  nextToolAt = now + (tool === "mulch" ? 320 : tool === "compost" ? 140 : 105);
   toolActionUntil = now + 210;
   if (tool === "drainage") {
     prepareSoilAt(state, x, tool);
@@ -634,8 +642,9 @@ function showReview() {
       )
       .join(
         "",
-      )}<p>Density reaches its target at 20 surviving seedlings in this compressed planting strip; diversity reaches its target at seven species. A few healthy trees form a healthy start, but cannot earn a dense-forest score.</p><button id="continueReview" class="primary">Continue growing →</button>`,
+      )}<p>Density reaches its target at 20 surviving seedlings in this compressed planting strip; diversity reaches its target at seven species. A few healthy trees form a healthy start, but cannot earn a dense-forest score.</p><div class="review-actions"><button id="restartReview">Restart</button><button id="continueReview" class="primary">Continue growing →</button></div>`,
   );
+  $("restartReview").onclick = () => confirmRestart(showReview);
   $("continueReview").onclick = () => {
     $("panel").close();
     enterPhase(6);
@@ -663,7 +672,7 @@ function updateWeedAlerts() {
       $("weedAlerts").appendChild(el);
       view.alerts.set(w.id, el);
     }
-    const p = view.project(w.x, plantHeight(w) * 0.72, view.records.get(w.id)?.depth ?? 0.14);
+    const p = view.project(w.x, plantHeight(w) * 0.72);
     el.style.left = p.x + "px";
     el.style.top = p.y + "px";
     el.hidden =
@@ -700,7 +709,7 @@ world.addEventListener("pointerdown", (e) => {
       e.clientY,
       e.pointerType === "touch" ? 24 : 12,
     ),
-    point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 0);
+    point = view.worldPoint(e.clientX, e.clientY);
   if (!tool) view.target = point.x;
   if (!tool && point.y < 0) {
     const soil = view.inspectSoil(e.clientX, e.clientY);
@@ -774,7 +783,7 @@ world.addEventListener("pointermove", (e) => {
     dy = e.clientY - gesture.lastY;
   if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 6)
     gesture.moved = true;
-  const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 0);
+  const point = view.worldPoint(e.clientX, e.clientY);
   if (gesture.plant) {
     if (gesture.moved) positionSeedling(gesture.plant, point.x);
   } else if (tool && applying) {
@@ -863,7 +872,7 @@ document.addEventListener(
   { passive: false },
 );
 let binDrag = null;
-const bin = $("toolBin");
+const bin = $("utilityBin");
 bin.addEventListener("pointerdown", (e) => {
   if (e.pointerType === "touch")
     binDrag = { x: e.clientX, left: bin.scrollLeft, moved: false };
@@ -907,9 +916,10 @@ window.addEventListener("keydown", (e) => {
     );
   }
 });
-$("restart").onclick = () => {
+function confirmRestart(onCancel = null) {
   panel(
     '<h2>Start a new forest?</h2><p>This replaces this browser’s saved forest.</p><button id="resetYes" class="primary">Start again</button>',
+    onCancel,
   );
   $("resetYes").onclick = () => {
     resetting = true;
@@ -917,10 +927,11 @@ $("restart").onclick = () => {
     localStorage.removeItem("pocket-forest-v1");
     location.reload();
   };
-};
+}
+$("restart").onclick = () => confirmRestart();
 $("about").onclick = () =>
   panel(
-    `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. During survey, tap a plant to open its field note and choose Add to Notebook. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
+    `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. During survey, tap a plant to open its field note and choose Add to Notebook. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Darker soil can indicate more nutrients or moisture. Worms emerge in moist, rich patches and carry nutrients to nearby soil. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
   );
 const farmerBubble = $("phaseTitle");
 let bubbleWidth = 0;
@@ -949,7 +960,7 @@ function frame(ms) {
   lastTime = ms;
   hydrology(state, dt);
   if (applying && tool && tool !== "drainage" && ms >= nextToolAt) {
-    applyAt(view.worldPoint(pointer.x, pointer.y, 3.02));
+    applyAt(view.worldPoint(pointer.x, pointer.y));
   }
   for (const x of view.pendingWater.splice(0)) {
     addWater(state, x, 6);

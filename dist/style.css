@@ -593,9 +593,9 @@ a {
   background: none;
 }
 #toolBin {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: flex-start;
   gap: 7px;
   max-width: fit-content;
   margin: auto;
@@ -604,15 +604,20 @@ a {
   border-radius: 15px;
   background: #dbeef8ed;
   box-shadow: 0 5px 22px #163c5d20;
-  overflow-x: auto;
   pointer-events: auto;
+}
+#utilityBin {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 6px;
+  overflow-x: auto;
   white-space: nowrap;
   touch-action: pan-x;
   scrollbar-width: thin;
 }
-#toolBin > * {
-  flex-shrink: 0;
-}
+#utilityBin > * { flex-shrink: 0; }
+#toolBin:has(#next[hidden]) { grid-template-columns: auto minmax(0, 1fr); }
 #actions {
   display: flex;
   flex-wrap: nowrap;
@@ -668,11 +673,12 @@ button:hover {
     serif;
   padding: 0 7px;
 }
-#toolBin #next {
-  min-width: 130px;
-  max-width: unset;
+#toolBin #next, #toolBin #back {
+  min-width: 0;
   font-size: 12px;
+  white-space: nowrap;
 }
+#toolBin #next { justify-self: end; }
 #speeds {
   display: block;
 }
@@ -763,7 +769,6 @@ meter::-webkit-meter-optimum-value {
 
 /* A single dark visual system for tools, notebook and confirmations. */
 :root { --ink:#f1f5fa; --paper:#141e2c; --line:#425166; }
-#toolBin { justify-content:safe center; }
 dialog, #selection, #tooltip, #toast { color:#f1f5fa; background:#141e2cf5; border-color:#425166; }
 dialog p, dialog small, dialog i, dialog .eyebrow, #tooltip small { color:#bbc9da; }
 dialog button, #selection button { background:#26374d; color:#f1f5fa; border-color:#526277; }
@@ -810,7 +815,6 @@ dialog::backdrop { background:#060c1699; }
   border-color: #526277;
 }
 #stageBin .active-tool { background: #245f8e !important; }
-#stageBin #next { font-size: 12px; white-space: nowrap; }
 #selection { top: calc(150px + env(safe-area-inset-top)); bottom: auto; }
 #world:has(#seedLeft:not([hidden])) #toast { top: calc(250px + env(safe-area-inset-top)); }
 .seed-arrow {
@@ -920,7 +924,7 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
   background: none;
   font-size: 15px;
 }
-#stageBin #next, #stageBin #back { padding: 9px 15px; min-width: 0; }
+
 #panel.shop-panel { overflow: hidden; padding: 0; }
 #panel.shop-panel #panelContent { display: flex; flex-direction: column; max-height: min(78dvh, 720px); }
 #panel.shop-panel #closePanel { position: absolute; top: 13px; right: 14px; z-index: 3; }
@@ -967,3 +971,11 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
 .forest-score { font-size: 20px; margin-top: 4px; }
 .death-note { border-left: 3px solid #e89583; padding-left: 9px; }
 #toolBin #sound[aria-pressed="true"] { background: #365f67; }
+
+
+#toolBin #next:not(:disabled) { background: #32739c; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 540px) {
+  #toolBin #next { max-width: 120px; white-space: normal; }
+  #toolBin #back, #toolBin #next { padding: 7px 9px; }
+}
