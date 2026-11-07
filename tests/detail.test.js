@@ -102,5 +102,19 @@ test("plucked weeds release nutrients into nearby surface soil as litter decays"
   const c=colAt(0);
   assert.ok(s.soil[c].n > control.soil[c].n);
   assert.ok(s.soil[c-1].n > control.soil[c-1].n);
-  assert.ok(s.nutrientReturns[c] > 0);
+});
+
+test("soil preparation changes only the clicked area and compost stays near the surface", async () => {
+  const { prepareSoilAt, colAt, COLS } = await import("../dist/ecology.js");
+  const s = freshState();
+  const before = structuredClone(s.soil);
+  const c = colAt(0);
+  prepareSoilAt(s, 0, "drainage");
+  assert.ok(s.soil[c].d > before[c].d);
+  assert.equal(s.soil[0].d, before[0].d);
+  prepareSoilAt(s, 0, "compost");
+  assert.ok(s.soil[c].n > before[c].n);
+  assert.ok(s.soil[c].c > before[c].c);
+  assert.equal(s.soil[4 * COLS + c].n, before[4 * COLS + c].n);
+  assert.equal(s.soil[0].n, before[0].n);
 });

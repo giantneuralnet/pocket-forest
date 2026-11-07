@@ -771,3 +771,88 @@ dialog .badge { background:#263d4e; color:#dbeaf5; }
 dialog .entry { border-color:#425166; }
 dialog::backdrop { background:#060c1699; }
 .nutrient-return { position:absolute; top:0; left:0; pointer-events:none; color:#b9f69d; background:#122319d9; padding:3px 7px; border-radius:5px; font:11px system-ui; white-space:nowrap; }
+
+#topHUD {
+  padding-top: calc(48px + env(safe-area-inset-top));
+}
+#money {
+  position: absolute;
+  top: calc(9px + env(safe-area-inset-top));
+  right: 12px;
+  padding: 6px 11px;
+  color: #fff;
+  background: #141e2cf5;
+  border: 1px solid #425166;
+  border-radius: 8px;
+  font-size: 14px;
+}
+#stageBin {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 6px;
+  padding: 7px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  touch-action: pan-x;
+  pointer-events: auto;
+  border: 1px solid #364454;
+  border-radius: 12px;
+  background: #101925f5;
+}
+#stageBin > * { flex-shrink: 0; }
+#stageBin button, #stageBin select {
+  color: #f1f5fa;
+  background: #243448;
+  border-color: #526277;
+}
+#stageBin .active-tool { background: #245f8e !important; }
+#stageBin #next { font-size: 12px; white-space: nowrap; }
+#selection { top: calc(150px + env(safe-area-inset-top)); bottom: auto; }
+#world:has(#seedLeft:not([hidden])) #toast { top: calc(250px + env(safe-area-inset-top)); }
+.seed-arrow {
+  position: absolute;
+  top: 49%;
+  z-index: 7;
+  min-width: 48px;
+  font-size: 22px;
+  color: #fff;
+  background: #243448;
+  border-color: #526277;
+}
+.seed-arrow:hover { background: #3a516b; }
+#seedLeft { left: max(8px, env(safe-area-inset-left)); }
+#seedRight { right: max(8px, env(safe-area-inset-right)); }
+.shop-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0 36px 8px 0;
+  background: var(--paper);
+}
+.shop-heading strong { font-size: 17px; white-space: nowrap; }
+.shop-entry { display: grid; grid-template-columns: 104px 1fr auto; gap: 12px; }
+.shop-entry h3 strong { color: #b8dfec; white-space: nowrap; }
+.shop-entry p { margin: 3px 0; }
+.shop-thumbnail { width: 104px; max-width: 100%; background: #233a3d; border-radius: 7px; }
+.weed-alert {
+  animation: weed-signal 1.15s ease-in-out infinite alternate;
+  text-shadow: 0 0 2px #641510, 0 1px 3px #000;
+}
+@keyframes weed-signal { from { color: #ff4747; } to { color: #fff; } }
+@media (prefers-reduced-motion: reduce) { .weed-alert { animation: none; color: #ff4747; } }
+@media (max-width: 520px) {
+  #stageBin { padding: 6px; }
+  #stageBin button { font-size: 11px; padding: 7px 9px; }
+  #actions { gap: 5px; }
+  .shop-entry { grid-template-columns: 72px 1fr; gap: 5px 10px; }
+  .shop-thumbnail { grid-row: span 2; }
+  .shop-entry button { justify-self: start; }
+}

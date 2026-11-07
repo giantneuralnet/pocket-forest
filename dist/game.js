@@ -1,4 +1,5 @@
-import { returnWeedToSoil } from "./ecology.js";
+import { returnWeedToSoil, prepareSoilAt } from "./ecology.js";
+import { makeArchitecture, poseArchitecture, leafAttachment } from "./architecture.js";
 import { species, layers, sources } from "./species.js";
 import {
   HALF,
@@ -53,6 +54,7 @@ let tool = null,
   applying = false,
   lastToolX = null,
   toolAccumulator = 0,
+  toolActionUntil = 0,
   simAccumulator = 0,
   lastTime = 0,
   soilTime = 0,
@@ -67,17 +69,17 @@ let gesture = null;
 const phaseNames = [
   "Survey the woodland",
   "Prepare a living soil",
-  "Design your forest",
+  "Plant shop",
   "Mulch & water",
   "Tend & observe",
   "Your forest review",
   "Watch your forest mature",
 ];
 const instructions = [
-  "Drag in any direction. Pinch to zoom. Tap any plant to add it to your notebook.",
-  "Improve drainage, mix organic matter, and add living compost.",
-  "Open the shop, buy seedlings, then drag and plant them. Select a pot to preview the mature forest.",
-  "Spread mulch across the bed, then water it. Water pools before soaking into the soil.",
+  "Drag in any direction. Pinch to zoom. Tap a plant to open its field note.",
+  "Dig with the shovel, then pour the compost and organic matter mix onto the soil.",
+  "Buy a seedling, then tap the plot, drag the pot, or use the side arrows to position it.",
+  "Choose mulch or water and apply it wherever you want to tend the bed.",
   "Watch your plants grow, water them, and pick weeds.",
   "Review the health, variety, density and care of your forest.",
   "Watch your plants grow, water them, and pick weeds.",
@@ -136,6 +138,10 @@ function recordSurvey(p) {
 function inspect(p, touch = false) {
   view.target = p.x;
   highlight(p);
+  if (state.phase === 0) {
+    openPlantNote(p);
+    return;
+  }
   if (p.sid === "grass" || p.sid === "forb") {
     recordSurvey(p);
     if (!p.wild) pluck(p);
@@ -159,11 +165,15 @@ function inspect(p, touch = false) {
   } else openPlantNote(p);
 }
 function openPlantNote(p) {
-  recordSurvey(p);
   panel(
     entry(byId(p.sid)) +
-      `<p>Health <strong>${Math.round(p.health)}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m${!p.wild ? ` · light ${Math.round((p.light ?? 1) * 100)}%<br>Root-zone moisture ${Math.round(cellAt(state, p.x, -0.3).m)}%` : ""}</p>`,
+      `<p>Health <strong>${Math.round(p.health)}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m${!p.wild ? ` · light ${Math.round((p.light ?? 1) * 100)}%<br>Root-zone moisture ${Math.round(cellAt(state, p.x, -0.3).m)}%` : ""}</p>` +
+      (state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
   );
+  if ($("addNote")) $("addNote").onclick = () => {
+    recordSurvey(p);
+    $("panel").close();
+  };
 }
 function formatAge(age) {
   return age < 1
@@ -185,14 +195,14 @@ function showTooltip(p, x, y, touch = false) {
   }
   const sp = byId(p.sid),
     el = $("tooltip");
-  el.innerHTML = `<strong>${sp.name}</strong><small>${Math.round(p.health ?? 100)}% health · ${formatAge(p.age)}<br>${sp.type === "weed" ? "Tap to pull out" : p.wild ? (state.survey.includes(sp.id) ? "Recorded · tap to inspect" : "Tap to survey") : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant"}</small>`;
+  el.innerHTML = `<strong>${sp.name}</strong><small>${Math.round(p.health ?? 100)}% health · ${formatAge(p.age)}<br>${sp.type === "weed" ? "Tap to pull out" : p.wild ? (state.surveyPlants.includes(p.id) ? "Recorded · tap to inspect" : "Tap to survey") : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant"}</small>`;
   el.style.display = "block";
   el.style.left = clamp(x + 15, 8, innerWidth - 245) + "px";
   el.style.top = clamp(y + 19, 10, innerHeight - 105) + "px";
 }
 function showSoilTooltip(sample, x, y) {
   const el = $("tooltip");
-  el.innerHTML = `<strong>Soil · ${Math.abs(sample.point.y).toFixed(1)} m deep</strong><small>Moisture <b>${sample.cell.m.toFixed(1)}%</b><br>Nutrients <b>${sample.cell.n.toFixed(1)}%</b></small>`;
+  el.innerHTML = `<strong>Soil · ${Math.abs(sample.point.y).toFixed(1)} m deep</strong><small>Moisture <b>${sample.cell.m.toFixed(1)}%</b><br>Nutrients <b>${sample.cell.n.toFixed(1)}%</b><br>Drainage <b>${Math.round(sample.cell.d * 100)}%</b></small>`;
   el.style.display = "block";
   el.style.left = clamp(x + 15, 8, innerWidth - 230) + "px";
   el.style.top = clamp(y + 19, 10, innerHeight - 110) + "px";
@@ -213,20 +223,43 @@ $("notebook").onclick = () => {
     .querySelectorAll("[data-note]")
     .forEach((b) => (b.onclick = () => panel(entry(byId(b.dataset.note)))));
 };
+const thumbnails = new Map();
+function plantThumbnail(sp) {
+  if (thumbnails.has(sp.id)) return thumbnails.get(sp.id);
+  const recipe = makeArchitecture(sp, 42);
+  const pose = poseArchitecture(recipe, 1.5);
+  const scale = 72 / Math.max(2, sp.height);
+  const unit = scale * sp.height / Math.max(...pose.map(n => n.b.y));
+  const x = n => (49 + n.x * unit).toFixed(1);
+  const y = n => (80 - n.y * unit).toFixed(1);
+  const branches = pose.map((n, i) =>
+    `<path d="M${x(n.a)} ${y(n.a)}L${x(n.b)} ${y(n.b)}" stroke-width="${Math.max(0.5, recipe.nodes[i].width * unit)}"/>`
+  ).join("");
+  const leaves = recipe.leaves.map(l => {
+    const a = leafAttachment(l, pose);
+    return `<ellipse cx="${x(a.tip)}" cy="${y(a.tip)}" rx="2" ry="1.25" transform="rotate(${Math.round(a.angle * 57)} ${x(a.tip)} ${y(a.tip)})"/>`;
+  }).join("");
+  const svg = `<svg class="shop-thumbnail" viewBox="0 0 104 88" role="img" aria-label="Mature ${sp.name} beside a 1.9 meter farmer">
+    <path d="M0 80H104" stroke="#72896b"/>
+    <g fill="none" stroke="#9e7956" stroke-linecap="round">${branches}</g>
+    <g fill="#${sp.color.toString(16).padStart(6, "0")}">${leaves}</g>
+    <g transform="translate(82 80) scale(${scale} -${scale})">
+      <path d="M-.2 0h.17v.7h-.17zm.23 0h.17v.7H.03z" fill="#5c6054"/>
+      <path d="M-.22 .65h.44v.65h-.44zM-.35 .77h.13v.46h-.13zm.57 0h.13v.46H.22z" fill="#83a16a"/>
+      <path d="M-.2 1.3h.4v.44h-.4z" fill="#d3ae86"/>
+      <path d="M-.3 1.74h.6v.09h-.6zm.11 .09h.38v.09h-.38z" fill="#dbbd78"/>
+    </g></svg>`;
+  thumbnails.set(sp.id, svg);
+  return svg;
+}
 function shop() {
   panel(
-    `<span class="eyebrow">Nursery · ¥${state.budget.toLocaleString()} remaining</span><h2>Plant a little more possibility.</h2><p>Your surveyed species are available here. Variety and a dense planting both matter in the final score. Mulch is included in the preparation supplies.</p>${state.survey
-      .map((id) => byId(id))
-      .filter((s) => s && s.type !== "weed")
-      .map(
-        (s) =>
-          `<div class="entry"><div><h3>${s.name}</h3><small>${s.latin}</small><p>${nativeText(s)} · ${layers[s.layer]} · ${s.height} m${s.flower ? " · Flowering / bees" : ""}</p></div><button data-buy="${s.id}" ${state.budget < s.price ? "disabled" : ""}>¥${s.price} · Buy</button></div>`,
-      )
-      .join("")}`,
+    `<header class="shop-heading"><h2>Plant shop</h2><strong>¥${state.budget.toLocaleString()}</strong></header>
+    ${state.survey.map(byId).filter(s => s && s.type !== "weed").map(s =>
+      `<div class="entry shop-entry">${plantThumbnail(s)}<div><h3>${s.name} <strong>${s.height} m</strong></h3><p>${s.native === true ? "Native" : s.native === false ? "Introduced" : "Status unresolved"} · ${layers[s.layer]}</p></div><button data-buy="${s.id}" ${state.budget < s.price ? "disabled" : ""}>¥${s.price} · Buy</button></div>`
+    ).join("")}`,
   );
-  document
-    .querySelectorAll("[data-buy]")
-    .forEach((b) => (b.onclick = () => buy(b.dataset.buy)));
+  document.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => buy(b.dataset.buy));
 }
 function buy(id) {
   const sp = byId(id);
@@ -243,14 +276,14 @@ function buy(id) {
   const p = {
     id: "p" + Date.now() + Math.floor(Math.random() * 1000),
     sid: id,
-    x: clamp(-8.5 + state.plants.length * 0.72, -9.5, 9.5),
+    x: clamp(view.center.x + ((state.plants.length % 5) - 2) * 0.65, -9.5, 9.5),
     z: 1,
     age: 0,
     health: 95,
     biomass: 0,
     seed: state.plants.length + 23,
     planted: false,
-    drop: 8,
+    drop: 0,
     roots: [],
     tips: [],
   };
@@ -259,18 +292,30 @@ function buy(id) {
   view.selected = p;
   view.target = p.x;
   $("panel").close();
-  view.plot();
   view.sync();
   highlight(p);
   updateUI();
-  toast(
-    "Drag the pot into place. The pale silhouettes show the mature forest.",
-  );
   save();
+}
+function positionSeedling(p, x) {
+  p.x = clamp(x, -HALF + 0.3, HALF - 0.3);
+  p.drop = 0;
+  view.target = p.x;
+  view.updatePlant(view.records.get(p.id));
+  view.updateGhosts();
+}
+for (const [id, direction] of [["seedLeft", -1], ["seedRight", 1]]) {
+  $(id).onclick = () => {
+    if (!selected) return;
+    positionSeedling(selected, selected.x + direction * 0.45);
+    save();
+  };
 }
 function updateSelection() {
   const el = $("selection");
-  if (selected && !selected.planted && state.phase === 2) {
+  const arranging = selected && !selected.planted && state.phase === 2;
+  $("seedLeft").hidden = $("seedRight").hidden = !arranging;
+  if (arranging) {
     el.style.display = "block";
     el.innerHTML = `${byId(selected.sid).name} · Plant here?<br><button id="plantYes" class="primary">Yes, plant here</button> <button id="plantLater">Keep arranging</button>`;
     $("plantYes").onclick = confirmPlant;
@@ -322,10 +367,12 @@ function action(text, fn, cls = "") {
   b.className = cls;
   b.onclick = fn;
   $("actions").appendChild(b);
+  return b;
 }
 function updateUI() {
   const p = state.phase;
-  $("phaseTitle").textContent = phaseNames[p];
+  const surveyed = state.survey.filter(id => byId(id)?.type !== "weed").length;
+  $("phaseTitle").textContent = p === 0 ? `${phaseNames[p]} · ${Math.min(5, surveyed)} out of 5` : phaseNames[p];
   $("instruction").textContent = instructions[p];
   $("steps").innerHTML = phaseNames
     .slice(0, 6)
@@ -339,25 +386,13 @@ function updateUI() {
   n.hidden = false;
   n.disabled = false;
   if (p === 0) {
-    n.textContent =
-      state.survey.filter((id) => byId(id)?.type !== "weed").length < 5
-        ? `${state.survey.filter((id) => byId(id)?.type !== "weed").length}/5 surveyed`
-        : "Next · Prepare →";
-    n.disabled =
-      state.survey.filter((id) => byId(id)?.type !== "weed").length < 5;
+    n.textContent = "Next · Prepare →";
+    n.disabled = surveyed < 5;
   }
   if (p === 1) {
-    [
-      "1 · Drainage · ¥400",
-      "2 · Organic matter + mulch · ¥800",
-      "3 · Compost · ¥400",
-    ].forEach((text, i) =>
-      action(state.prep[i] ? "✓ " + text.split(" · ¥")[0] : text, () =>
-        prepare(i),
-      ),
-    );
+    action(`${state.prep[0] ? "✓ " : ""}Drainage`, () => setTool("drainage"), tool === "drainage" ? "active-tool" : "");
+    action(`${state.prep[1] && state.prep[2] ? "✓ " : ""}Compost + organic matter`, () => setTool("compost"), tool === "compost" ? "active-tool" : "");
     n.textContent = "Next · Buy & plant →";
-    n.disabled = !state.prep.every(Boolean);
   }
   if (p === 2) {
     action("Open seedling shop", shop, "shop-button");
@@ -367,23 +402,9 @@ function updateUI() {
       state.plants.some((p) => !p.planted);
   }
   if (p === 3) {
-    const covered = state.soil
-      .slice(0, COLS)
-      .filter((c) => c.mulch > 0.7).length;
-    action(
-      covered === COLS
-        ? "✓ Mulch complete"
-        : `Mulch bag · ${Math.round((covered / COLS) * 100)}%`,
-      () => setTool("mulch"),
-      tool === "mulch" ? "active-tool" : "",
-    );
-    action(
-      `Watering can · ${Math.round((state.watered.filter(Boolean).length / COLS) * 100)}%`,
-      () => setTool("water"),
-      tool === "water" ? "active-tool" : "",
-    );
+    action("Mulch bag", () => setTool("mulch"), tool === "mulch" ? "active-tool" : "").id = "mulchBag";
+    action("Watering can", () => setTool("water"), tool === "water" ? "active-tool" : "");
     n.textContent = "Begin tending →";
-    n.disabled = covered < COLS || state.watered.some((v) => !v);
   }
   if (p === 4 || p === 6) {
     action(
@@ -407,6 +428,7 @@ function updateUI() {
   updateStats();
 }
 function updateStats() {
+  if ($("mulchBag")) $("mulchBag").textContent = `Mulch bag · ${Math.ceil(state.mulchSupply ?? 100)}%`;
   $("money").textContent = "¥" + state.budget.toLocaleString();
   $("count").textContent = state.survey.length;
   const avg = (key) =>
@@ -419,7 +441,7 @@ function updateStats() {
     Math.floor((state.day % 365) / 91.25)
   ];
   $("date").textContent =
-    `Year ${Math.floor(state.day / 365) + 1} · day ${Math.floor(state.day % 365) + 1}`;
+    `Year ${Math.floor(state.day / 365) + 1} · ${$("weather").textContent} · Day ${Math.floor(state.day % 365) + 1}`;
   $("remaining").textContent =
     state.phase === 6
       ? "Free growth"
@@ -436,40 +458,6 @@ function updateStats() {
   }
   $("timeScale").value = state.speed;
   $("speeds").hidden = ![4, 6].includes(state.phase);
-}
-function prepare(i) {
-  if (state.prep[i]) return;
-  if (i && !state.prep[i - 1]) {
-    toast("Begin with drainage, then mix organic matter and add compost.");
-    return;
-  }
-  const cost = [400, 800, 400][i];
-  if (state.budget < cost) return;
-  state.budget -= cost;
-  state.prep[i] = true;
-  if (i === 1) state.warned.mulchPaid = true;
-  for (const c of state.soil) {
-    if (i === 0) c.d = 0.85;
-    if (i === 1) {
-      c.o = 1;
-      c.n += 12;
-    }
-    if (i === 2) {
-      c.c = 0.8;
-      c.n += 15;
-    }
-  }
-  view.target = 0;
-  view.updateSoil();
-  toast(
-    [
-      "Loose soil allows air and water to move around young roots.",
-      "Organic matter holds water. Your mulch supply is ready for after planting.",
-      "Compost brings decomposers that release nutrients from organic matter.",
-    ][i],
-  );
-  updateUI();
-  save();
 }
 function advance() {
   if (state.phase === 5) {
@@ -491,62 +479,67 @@ function advance() {
 }
 $("next").onclick = () => {
   if ($("next").disabled) return;
-  if (state.budget > 0 && state.phase >= 1 && state.phase <= 3) {
-    panel(
-      `<h2>Leave ¥${state.budget.toLocaleString()} unspent?</h2><p>${state.phase === 1 ? "Your remaining budget will carry into the seedling shop." : state.phase === 2 ? "You can still buy more species or plant more densely. Moving on closes the seedling shop for this forest." : "You have funds left from planting. You can continue tending with the supplied tools."}</p><button id="advanceYes" class="primary">Okay, continue</button><button id="advanceNo">Go back</button>`,
-    );
-    $("advanceYes").onclick = () => {
-      $("panel").close();
-      advance();
-    };
+  if (state.phase === 1 && !state.prep.every(Boolean)) {
+    const skipped = [!state.prep[0] && "drainage", !(state.prep[1] && state.prep[2]) && "the compost mix"].filter(Boolean);
+    panel(`<h2>Skip ${skipped.join(" and ")}?</h2><p>You can plant now or go back to prepare the soil.</p><button id="advanceYes" class="primary">Continue to planting</button><button id="advanceNo">Go back</button>`);
+    $("advanceYes").onclick = () => { $("panel").close(); advance(); };
     $("advanceNo").onclick = () => $("panel").close();
   } else advance();
 };
 function setTool(t) {
-  if (t === "mulch" && state.soil.slice(0, COLS).every((c) => c.mulch > 0.7)) {
-    toast("The bed is mulched. Pick up the watering can.");
-    return;
-  }
   tool = tool === t ? null : t;
+  toolActionUntil = 0;
   applying = false;
   lastToolX = null;
+  if (tool) view.plot();
+  if (tool === "mulch" && state.mulchSupply === 0) state.mulchSupply = 100;
   hideTooltip();
   highlight(null);
   updateUI();
 }
 function applyAt(x) {
   if (Math.abs(x) > HALF) return;
-  if (tool === "mulch" && !state.warned.mulchPaid) {
-    if (state.budget < 300) {
-      toast("There is not enough budget for more mulch.");
-      tool = null;
-      return;
-    }
-    state.budget -= 300;
-    state.warned.mulchPaid = true;
+  if (tool === "drainage" && !state.prep[0]) {
+    if (state.budget < 400) { toast("Drainage costs ¥400."); return; }
+    state.budget -= 400;
+    state.prep[0] = true;
+    updateUI();
   }
+  if (tool === "compost" && !state.warned.compostSupply) {
+    const cost = (state.prep[1] ? 0 : 800) + (state.prep[2] ? 0 : 400);
+    if (state.budget < cost) { toast(`The compost mix costs ¥${cost.toLocaleString()}.`); return; }
+    state.budget -= cost;
+    state.warned.compostSupply = true;
+    updateStats();
+  }
+  toolActionUntil = performance.now() + 260;
   const start = lastToolX ?? x;
-  const distance = Math.abs(x - start);
-  const n = Math.max(1, Math.ceil(distance / (CW * 0.7)));
+  const n = Math.max(1, Math.ceil(Math.abs(x - start) / (CW * 0.7)));
   for (let i = 1; i <= n; i++) {
     const px = start + ((x - start) * i) / n;
-    if (tool === "mulch") {
-      if (cellAt(state, px).mulch < 0.8) view.spawn("mulch", px, 0.75, 5);
+    if (tool === "drainage") {
+      prepareSoilAt(state, px, tool);
+      view.spawn("dig", px, 0.12, 5);
+    } else if (tool === "compost") view.spawn("compost", px, 0.85, 6);
+    else if (tool === "mulch") {
+      state.mulchSupply = Math.max(0, (state.mulchSupply ?? 100) - 1);
+      view.spawn("mulch", px, 0.75, 5);
+      if (state.mulchSupply === 0) {
+        tool = null;
+        applying = false;
+        toast("Mulch bag empty. Tap the bag button to refill it.");
+        updateUI();
+        break;
+      }
     } else if (tool === "water") view.spawn("water", px, 0.95, 5);
   }
   lastToolX = x;
   view.target = x;
 }
-const nutrientMarkers = [];
 function pluck(w) {
   view.uproot(w);
   state.weeds = state.weeds.filter((p) => p !== w);
   returnWeedToSoil(state, w);
-  const c = Math.floor((w.x + HALF) / CW);
-  const marker = document.createElement("div");
-  marker.className = "nutrient-return";
-  $("weedAlerts").appendChild(marker);
-  nutrientMarkers.push({el:marker, x:w.x, c, baseline:state.nutrientReturns?.[c] || 0, until:performance.now()+45000});
   view.target = w.x;
   view.sync();
   highlight(null);
@@ -606,7 +599,7 @@ function updateWeedAlerts() {
       $("weedAlerts").appendChild(el);
       view.alerts.set(w.id, el);
     }
-    const p = view.project(w.x, plantHeight(w) + 0.35 + (w.seed % 2) * 0.65);
+    const p = view.project(w.x, plantHeight(w) * 0.72, w.z ?? 2.8);
     el.style.left = p.x + "px";
     el.style.top = p.y + "px";
     el.hidden =
@@ -639,14 +632,14 @@ world.addEventListener("pointerdown", (e) => {
     };
     return;
   }
-  const hit = view.hit(
+  const hit = tool ? null : view.hit(
       e.clientX,
       e.clientY,
       e.pointerType === "touch" ? 24 : 12,
     ),
     point = view.worldPoint(e.clientX, e.clientY, tool ? 3.05 : 1);
   view.target = point.x;
-  if (point.y < 0) {
+  if (!tool && point.y < 0) {
     const soil = view.inspectSoil(e.clientX, e.clientY);
     if (soil) showSoilTooltip(soil, e.clientX, e.clientY);
   }
@@ -666,7 +659,7 @@ world.addEventListener("pointerdown", (e) => {
     view.updateGhosts();
     updateSelection();
   }
-  if (tool && Math.abs(point.x) <= HALF && point.y < 2 && point.y > -0.9) {
+  if (tool && Math.abs(point.x) <= HALF) {
     applying = true;
     lastToolX = null;
     applyAt(point.x);
@@ -694,7 +687,7 @@ world.addEventListener("pointermove", (e) => {
       cx = (a.x + b.x) / 2,
       cy = (a.y + b.y) / 2,
       distance = Math.hypot(a.x - b.x, a.y - b.y);
-    if (gesture?.multi) {
+    if (gesture?.multi && !tool) {
       view.pan(cx - gesture.cx, cy - gesture.cy);
       view.zoomAt(distance / Math.max(1, gesture.distance), cx, cy);
     }
@@ -709,12 +702,10 @@ world.addEventListener("pointermove", (e) => {
     gesture.moved = true;
   const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.05 : 1);
   if (gesture.plant) {
-    gesture.plant.x = clamp(point.x, -HALF + 0.3, HALF - 0.3);
-    view.updatePlant(view.records.get(gesture.plant.id));
-    view.updateGhosts();
+    if (gesture.moved) positionSeedling(gesture.plant, point.x);
   } else if (tool && applying) {
-    if (point.y < 2 && point.y > -0.9) applyAt(point.x);
-  } else if (gesture.moved) {
+    if (tool !== "drainage") applyAt(point.x);
+  } else if (gesture.moved && !tool) {
     view.pan(dx, dy);
     hideTooltip();
   }
@@ -729,7 +720,10 @@ function endPointer(e) {
   }
   applying = false;
   lastToolX = null;
-  if (gesture && !gesture.moved && !gesture.multi && !tool && gesture.hit) {
+  if (gesture && !gesture.moved && !gesture.multi && !tool && state.phase === 2 && selected && !gesture.plant) {
+    const point = view.worldPoint(e.clientX, e.clientY);
+    if (Math.abs(point.x) <= HALF) positionSeedling(selected, point.x);
+  } else if (gesture && !gesture.moved && !gesture.multi && !tool && gesture.hit) {
     if (gesture.touch && pendingTreeTap?.id === gesture.hit.id) {
       openPlantNote(gesture.hit);
       pendingTreeTap = null;
@@ -754,6 +748,7 @@ world.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
+    if (tool) return;
     if (e.ctrlKey || e.metaKey)
       view.zoomAt(Math.exp(-e.deltaY * 0.008), e.clientX, e.clientY);
     else view.pan(-e.deltaX, -e.deltaY);
@@ -774,7 +769,7 @@ document.addEventListener(
   "gesturechange",
   (e) => {
     e.preventDefault();
-    if (pointers.size < 2)
+    if (!tool && pointers.size < 2)
       view.zoomAt(
         e.scale / safariScale,
         e.clientX || innerWidth / 2,
@@ -787,7 +782,7 @@ document.addEventListener(
 document.addEventListener(
   "touchmove",
   (e) => {
-    if (!e.target.closest("dialog, #toolBin")) e.preventDefault();
+    if (!e.target.closest("dialog, #toolBin, #stageBin")) e.preventDefault();
   },
   { passive: false },
 );
@@ -823,7 +818,12 @@ $("home").onclick = () => view.plot();
 window.addEventListener("resize", () => view.resize());
 window.addEventListener("keydown", (e) => {
   if ($("panel").open) return;
-  if (e.key.startsWith("Arrow")) {
+  if (selected && ["ArrowLeft", "ArrowRight"].includes(e.key)) {
+    e.preventDefault();
+    $(e.key === "ArrowLeft" ? "seedLeft" : "seedRight").click();
+    return;
+  }
+  if (!tool && e.key.startsWith("Arrow")) {
     e.preventDefault();
     view.pan(
       e.key === "ArrowLeft" ? 70 : e.key === "ArrowRight" ? -70 : 0,
@@ -844,7 +844,7 @@ $("restart").onclick = () => {
 };
 $("about").onclick = () =>
   panel(
-    `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. On touch, one tap highlights and records a plant; a second opens its note. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
+    `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. During survey, tap a plant to open its field note and choose Add to Notebook. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
   );
 function frame(ms) {
   const cpuStart = performance.now();
@@ -856,7 +856,7 @@ function frame(ms) {
     toolAccumulator += dt;
     if (toolAccumulator > 0.1) {
       const p = view.worldPoint(pointer.x, pointer.y, 3.05);
-      if (p.y < 2 && p.y > -0.9) applyAt(p.x);
+      if (tool !== "drainage") applyAt(p.x);
       toolAccumulator = 0;
     }
   }
@@ -879,14 +879,11 @@ function frame(ms) {
     )
       state.soil[c].mulch = clamp(state.soil[c].mulch + 0.12);
   }
-  if (
-    tool === "mulch" &&
-    state.soil.slice(0, COLS).every((c) => c.mulch > 0.7)
-  ) {
-    tool = null;
-    applying = false;
-    updateUI();
-    toast("Mulching complete. The bag is put away.");
+  for (const x of view.pendingCompost.splice(0)) {
+    if (state.phase !== 1) continue;
+    const first = !state.prep[2];
+    prepareSoilAt(state, x, "compost");
+    if (first) updateUI();
   }
   if ([4, 6].includes(state.phase)) {
     simAccumulator += dt * state.speed;
@@ -921,7 +918,6 @@ function frame(ms) {
   }
   if (uiTime > 0.45) {
     updateStats();
-    if (state.phase === 3) updateUI();
     uiTime = 0;
   }
   if (saveTime > 20) {
@@ -929,17 +925,9 @@ function frame(ms) {
     saveTime = 0;
   }
   const renderStart = performance.now();
-  view.render(dt, ms / 1000, tool, pointer, applying);
+  view.render(dt, ms / 1000, tool, pointer, applying || ms < toolActionUntil);
   // Camera-relative overlays follow the same animation frame as the scene.
   updateWeedAlerts();
-  for (let i = nutrientMarkers.length - 1; i >= 0; i--) {
-    const m = nutrientMarkers[i];
-    if (ms > m.until) { m.el.remove(); nutrientMarkers.splice(i,1); continue; }
-    const at = view.project(m.x, 0.3, 6);
-    m.el.style.transform = `translate(${at.x}px,${at.y}px) translate(-50%,-100%)`;
-    const released = (state.nutrientReturns?.[m.c] || 0) - m.baseline;
-    m.el.textContent = released > 0 ? `+${released.toFixed(2)} nutrients` : "Decomposing → nutrients";
-  }
   $("world").dataset.renderMs = (performance.now() - renderStart).toFixed(1);
   const cpu = performance.now() - cpuStart;
   framePeak = Math.max(framePeak, cpu);

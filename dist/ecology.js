@@ -333,6 +333,25 @@ export function growRoots(s, p) {
   }
   p.tips = [...next, ...forks].slice(0, 10);
 }
+export function prepareSoilAt(s, x, tool) {
+  const center = colAt(x);
+  const digging = tool === "drainage";
+  const depth = digging ? 5 : 3;
+  for (let c = Math.max(0, center - 2); c <= Math.min(COLS - 1, center + 2); c++) {
+    const spread = 1 - Math.abs(c - center) * 0.25;
+    for (let r = 0; r < depth; r++) {
+      const cell = s.soil[r * COLS + c];
+      const dose = spread * (1 - r / depth);
+      if (digging) cell.d = Math.min(1, cell.d + 0.42 * dose);
+      else {
+        cell.n = Math.min(100, cell.n + 2.4 * dose);
+        cell.o = Math.min(1, cell.o + 0.07 * dose);
+        cell.c = Math.min(1, cell.c + 0.06 * dose);
+      }
+    }
+  }
+  if (!digging) s.prep[1] = s.prep[2] = true;
+}
 export function returnWeedToSoil(s, weed) {
   for (let offset = -2; offset <= 2; offset++) {
     const cell = cellAt(s, weed.x + offset * CW, -CH * 0.5);
@@ -358,12 +377,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
       cell.m = clamp(cell.m - evap, 0, 100);
       const decay = Math.min(cell.litter, (0.025 * cell.c * cell.m) / 100);
       cell.litter -= decay;
-      const released = Math.min(100 - cell.n, decay * 2);
-      cell.n = clamp(cell.n + released + 0.003 * cell.c, 0, 100);
-      if (r === 0 && released > 0) {
-        s.nutrientReturns ??= {};
-        s.nutrientReturns[c] = (s.nutrientReturns[c] || 0) + released;
-      }
+      cell.n = clamp(cell.n + decay * 2 + 0.003 * cell.c, 0, 100);
     }
     top.mulch = Math.max(0, top.mulch - 0.00013);
   }

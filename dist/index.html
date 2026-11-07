@@ -16,10 +16,13 @@
       <div id="weedAlerts"></div>
       <div id="tooltip" role="status"></div>
       <div id="selection"></div>
+      <button id="seedLeft" class="seed-arrow" aria-label="Move seedling left" hidden>←</button>
+      <button id="seedRight" class="seed-arrow" aria-label="Move seedling right" hidden>→</button>
       <div id="toast" role="status" aria-live="polite"></div>
       <div id="fatal" hidden></div>
     </main>
     <div id="topHUD">
+      <strong id="money" aria-label="Budget"></strong>
       <div class="phase">
         <div id="steps"></div>
         <h1 id="phaseTitle"></h1>
@@ -31,9 +34,15 @@
       </div>
     </div>
     <div id="bottomHUD">
+      <div id="stageBin" aria-label="Stage actions">
+        <div id="actions"></div>
+        <label id="speeds" hidden
+          ><select id="timeScale" aria-label="Simulation speed"></select></label>
+        <button id="next" class="primary"></button>
+      </div>
       <div id="toolBin" aria-label="Forest tools and controls">
-        <button id="home">Plot</button><strong id="money"></strong
-        ><button id="notebook">Notebook <span id="count">0</span></button>
+        <button id="home">Go to Plot</button>
+        <button id="notebook">Notebook <span id="count">0</span></button>
         <div class="soil-stats">
           <span
             >Moisture <b id="moisture"></b
@@ -43,12 +52,8 @@
             ><meter id="nutrientMeter" min="0" max="100"></meter></span
           ><span id="weather"></span>
         </div>
-        <div id="actions"></div>
-        <label id="speeds" hidden
-          ><select id="timeScale" aria-label="Simulation speed"></select></label
-        ><button id="next" class="primary"></button
-        ><button id="about" aria-label="About the forest">?</button
-        ><button id="restart" aria-label="Start again">↻</button>
+        <button id="about" aria-label="About the forest">?</button>
+        <button id="restart" aria-label="Start again">↻</button>
       </div>
     </div>
     <dialog id="panel">
