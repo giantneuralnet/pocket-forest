@@ -24,9 +24,66 @@ const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 5, 1, true),
   soilGeometry = new T.PlaneGeometry(1, 1);
 const boxGeometry = new T.BoxGeometry(1, 1, 1),
-  leafGeometry = new T.PlaneGeometry(1, 1).translate(0, 0.45, 0),
+  leafGeometry = new T.PlaneGeometry(1, 1).translate(0, 0.405, 0),
   materialCache = new Map(),
   leafStamps = new Map();
+const flowerGeometry = new T.PlaneGeometry(1, 1);
+const fruitGeometry = new T.SphereGeometry(0.5, 10, 8);
+const flowersBySpecies = new Map();
+const fruitStyles = {
+  privet: { color: 0x343144, from: 245, to: 355, size: 0.12 },
+  ardisia: { color: 0xb42837, from: 245, to: 365, size: 0.10 },
+  hackberry: { color: 0x59453e, from: 220, to: 310, size: 0.12 },
+};
+
+function blossomMaterial(sp) {
+  if (flowersBySpecies.has(sp.id)) return flowersBySpecies.get(sp.id);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  const petal = "#" + sp.flower.toString(16).padStart(6, "0");
+  function flower(x, y, radius, count, long = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    for (let i = 0; i < count; i++) {
+      ctx.rotate(Math.PI * 2 / count);
+      ctx.fillStyle = petal;
+      ctx.beginPath();
+      ctx.ellipse(0, -radius * 0.48, radius * (long ? 0.22 : 0.39), radius * 0.51, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = sp.id === "four" ? "#a43964" : "#e5ae41";
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.23, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  if (sp.id === "privet") {
+    [[28, 31], [49, 25], [68, 38], [27, 56], [50, 49], [67, 65], [44, 72]]
+      .forEach(([x, y]) => flower(x, y, 15, 4));
+  } else if (sp.id === "eurya") {
+    [[28, 40], [50, 57], [70, 39]].forEach(([x, y]) => flower(x, y, 18, 5, true));
+  } else if (sp.id === "camellia") {
+    flower(48, 48, 44, 8);
+    ctx.fillStyle = "#f1cc64";
+    for (let i = 0; i < 10; i++) {
+      ctx.beginPath();
+      ctx.arc(48 + Math.cos(i * 2.4) * 11, 48 + Math.sin(i * 2.4) * 11, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else flower(48, 48, 43, 5, sp.id === "ardisia");
+  const map = new T.CanvasTexture(canvas);
+  map.colorSpace = T.SRGBColorSpace;
+  const blossom = new T.MeshLambertMaterial({ map, side: T.DoubleSide, alphaTest: 0.45 });
+  flowersBySpecies.set(sp.id, blossom);
+  return blossom;
+}
+
+function branchWidth(rec, node) {
+  if (rec.sp.type === "weed" || rec.sp.type === "fern") return node.width;
+  const heightRatio = clamp(rec.height / rec.sp.height);
+  return node.width * (1 + heightRatio * (node.depth === 0 ? 1.25 : 0.55));
+}
 const material = (color, opacity = 1) => {
   const key = color + ":" + opacity;
   if (!materialCache.has(key))
@@ -51,7 +108,6 @@ const barkStyles = {
   castanopsis: ["#583f33", 22, 0],
 };
 const barkMaterials = new Map();
-const autumnMaterials = new Map();
 function barkMaterial(sp) {
   if (sp.type === "weed" || sp.type === "fern") return material(0x688348);
   if (barkMaterials.has(sp.id)) return barkMaterials.get(sp.id);
@@ -199,6 +255,12 @@ export class ForestView {
     this.records = new Map();
     this.wild = [];
     this.effects = [];
+    this.sheddingPlants = new Set();
+    this.fallingLeaves = new Map();
+    this.landedLeaves = [];
+    this.leafTransform = new T.Object3D();
+    this.leafMatrix = new T.Matrix4();
+    this.leafScale = new T.Vector3();
     this.pendingWater = [];
     this.pendingMulch = [];
     this.pendingCompost = [];
@@ -341,6 +403,7 @@ export class ForestView {
     this.makeFarmer();
     this.makeTools();
     this.makeFauna();
+    this.makeBirds();
     this.rainDrops = new T.InstancedMesh(
       boxGeometry,
       new T.MeshBasicMaterial({
@@ -458,8 +521,9 @@ export class ForestView {
       sp,
       group,
       g,
-      branches: [],
       flowers: [],
+      fruits: [],
+      perch: new T.Vector3(),
       height: 0,
       rootMesh: null,
     };
@@ -498,20 +562,20 @@ export class ForestView {
     record.leaves = leaves;
     record.data = data;
     record.stamp = st;
-    if (sp.flower)
-      for (let i = 0; i < 7; i++) {
-        const flower = box(
-          g,
-          (random(i + p.seed) - 0.5) * 0.5,
-          0.6 + random(i + 3) * 0.34,
-          0.5,
-          1,
-          1,
-          0.3,
-          sp.flower,
-        );
+    const fruit = fruitStyles[sp.id];
+    for (let i = 0; i < 7; i++) {
+      if (sp.flower) {
+        const flower = new T.Mesh(flowerGeometry, blossomMaterial(sp));
+        g.add(flower);
         record.flowers.push(flower);
       }
+      if (fruit) {
+        const berry = new T.Mesh(fruitGeometry, material(fruit.color));
+        berry.userData.fruitIndex = i;
+        g.add(berry);
+        record.fruits.push(berry);
+      }
+    }
     const pot = new T.Group();
     group.add(pot);
     box(pot, 0, 0.13, 0.2, 0.36, 0.3, 0.3, 0xad6d42);
@@ -527,6 +591,7 @@ export class ForestView {
     const h = plantHeight(p),
       health = p.health ?? 95;
     rec.height = h;
+    rec.trunkRadius = h * branchWidth(rec, rec.recipe.nodes[0]) * 0.5;
     group.position.set(p.x, p.planted ? 0 : p.drop || 0, p.z ?? 1);
     rec.pot.visible = !p.planted;
     g.scale.set(h, h, h);
@@ -560,8 +625,16 @@ export class ForestView {
         (p.wild || p.age > 0.25) &&
         h > sp.height * 0.16 &&
         (windows[sp.id] ?? day < 150);
-      f.scale.setScalar(clamp(0.22 / h, 0.025, 0.2));
+      const diameter = sp.id === "camellia" ? 0.4 : sp.id === "eurya" ? 0.22 : 0.32;
+      f.scale.setScalar(clamp(diameter / h, 0.01, 0.25));
     });
+    const fruit = fruitStyles[sp.id];
+    for (const berry of rec.fruits) {
+      berry.visible = health > 50 && p.planted && (p.wild || p.age >= 1.5) &&
+        h > sp.height * 0.2 && day >= fruit.from && day < fruit.to &&
+        p.fruitEaten?.[berry.userData.fruitIndex] !== Math.floor(this.state.day / 365);
+      berry.scale.setScalar(fruit.size / h);
+    }
     if (!p.wild && p.planted && this.state.day - (rec.lightAt ?? -100) >= 30) {
       rec.lightAt = this.state.day;
       const left = this.exposure(p.x - 0.5, h * 0.85, p.id).light,
@@ -596,14 +669,13 @@ export class ForestView {
     };
     pose.forEach((n, i) => {
       const node = rec.recipe.nodes[i];
-      const woody = sp.type !== "weed" && sp.type !== "fern";
-      const heightRatio = clamp(rec.height / sp.height);
-      const thickening = woody ? 1 + heightRatio * (node.depth === 0 ? 1.25 : 0.55) : 1;
-      drawSegment(n.a, n.b, node.width * thickening);
+      drawSegment(n.a, n.b, branchWidth(rec, node));
     });
     const day = this.state.day % 365;
     const previous = rec.foliageDay;
-    let fallen = 0;
+    const season = Math.floor(this.state.day / 365);
+    rec.shedding ??= new Map();
+    if (day < 235) rec.shedding.clear();
     for (const l of rec.data) {
       const segment = pose[l.branch];
       if (
@@ -615,14 +687,16 @@ export class ForestView {
       const attachment = leafAttachment(l, pose, p.health);
       const leafTiming = random(p.seed + l.branch * 23 + l.at * 37);
       const fallDay = 235 + leafTiming * 44;
+      let release = rec.shedding.get(l);
       if (rec.seasonal && day >= fallDay) {
-        const previousDay = previous % 365;
-        if (previous != null && previousDay < fallDay && this.state.day > previous && fallen++ < 5 && this.effects.length < 250) {
-          this.spawn("leaf", p.x + attachment.tip.x * scale * rec.height,
-            attachment.tip.y * scale * rec.height, 1,
-            (p.z ?? 1) + attachment.tip.z * scale * rec.height, sp);
+        const crossing = previous != null && Math.floor(previous / 365) === season &&
+          previous % 365 < fallDay && this.state.day > previous;
+        if (!release && crossing) {
+          release = { at: this.time + leafTiming * 1.7, duration: 0.36 + leafTiming * 0.32 };
+          rec.shedding.set(l, release);
+          this.sheddingPlants.add(rec);
         }
-        continue;
+        if (!release) continue;
       }
       const leafGrowth = rec.seasonal && day < 52
         ? clamp((day - leafTiming * 22) / (20 + leafTiming * 10)) : 1;
@@ -630,7 +704,7 @@ export class ForestView {
       drawSegment(
         attachment.base,
         attachment.tip,
-        Math.min(0.0025, rec.recipe.nodes[l.branch].width * 0.4),
+        Math.min(l.stalkWidth, rec.recipe.nodes[l.branch].width * 0.52),
       );
       const size =
         clamp(
@@ -640,7 +714,7 @@ export class ForestView {
           0.32,
         ) *
         (sp.leaf === "small" ? 0.72 : 1) *
-        l.size *
+        l.size * 0.82 *
         clamp((segment.growth - 0.15) / 0.85) * leafGrowth;
       dummy.position.set(attachment.tip.x * scale, attachment.tip.y * scale, attachment.tip.z * scale);
       dummy.rotation.set(l.tilt || 0, l.roll || 0, -attachment.angle, "ZYX");
@@ -659,6 +733,10 @@ export class ForestView {
           0.77 + random(l.at * 100) * 0.21,
         ),
       );
+      if (release) {
+        release.slot = leafCount;
+        (release.matrix ??= new T.Matrix4()).copy(dummy.matrix);
+      }
       // One raycast proxy per leafy twig, instead of one per leaf.
       const width = dummy.scale.x,
         height = dummy.scale.y,
@@ -715,10 +793,18 @@ export class ForestView {
       new T.Vector3(0, 0.5, 0),
       Math.max(3, 4 / Math.max(0.1, rec.height)),
     );
-    rec.flowers.forEach((f, i) => {
-      const branch = pose[Math.max(0, pose.length - 1 - i * 3)];
-      f.position.set(branch.b.x * scale, branch.b.y * scale, branch.b.z * scale);
-    });
+    const tips = pose.filter((n, i) => n.growth > 0.4 && rec.recipe.nodes[i].depth > 0);
+    const perch = pose[Math.min(3, pose.length - 1)].b;
+    rec.perch.set(perch.x * scale, perch.y * scale, perch.z * scale);
+    for (const [pieces, isFruit] of [[rec.flowers, false], [rec.fruits, true]]) {
+      pieces.forEach((piece, i) => {
+        const node = tips.length ? tips[Math.floor(i * tips.length / pieces.length)] : pose[0];
+        piece.position.set(node.b.x * scale, node.b.y * scale, node.b.z * scale);
+        if (isFruit) piece.position.y -= 0.045 / rec.height;
+        else piece.rotation.set((random(p.seed + i * 13) - 0.5) * 0.9,
+          (random(p.seed + i * 29) - 0.5) * 0.9, node.angle * 0.4);
+      });
+    }
     rec.poseTime = time;
     rec.pose = pose;
     rec.poseScale = scale;
@@ -727,7 +813,10 @@ export class ForestView {
   updateRoots(rec) {
     if (rec.p.wild) return;
     const segments = rec.p.roots || [];
-    if (rec.rootCount === segments.length) return;
+    const nominalRadius = rec.sp.type === "weed" ? 0.023 : 0.06;
+    const baseRadius = rec.trunkRadius == null ? nominalRadius :
+      Math.max(0.0001, Math.round(rec.trunkRadius * 0.84 * 10000) / 10000);
+    if (rec.rootCount === segments.length && rec.rootBaseRadius === baseRadius) return;
     if (!rec.rootMesh) {
       rec.rootMesh = new T.InstancedMesh(
         rootGeometry,
@@ -746,16 +835,26 @@ export class ForestView {
     }
     const dummy = new T.Object3D(),
       up = new T.Vector3(0, 1, 0);
-    const startCount = rec.rootCount || 0;
+    const startCount = Math.min(1024, rec.rootCount || 0);
+    const matrices = rec.rootMesh.instanceMatrix;
+    const widthChanged = rec.rootBaseRadius != null && rec.rootBaseRadius !== baseRadius;
+    if (widthChanged) {
+      const ratio = baseRadius / rec.rootBaseRadius;
+      for (let i = 0; i < startCount; i++) {
+        const offset = i * 16;
+        for (let axis = 0; axis < 3; axis++) {
+          matrices.array[offset + axis] *= ratio;
+          matrices.array[offset + 8 + axis] *= ratio;
+        }
+      }
+    }
     let count = startCount;
     for (let i = count; i < Math.min(1024, segments.length); i++) {
       const segment = segments[i],
         a = new T.Vector3(segment.a[0], segment.a[1], rec.p.z ?? 1),
         b = new T.Vector3(segment.b[0], segment.b[1], rec.p.z ?? 1),
         delta = b.clone().sub(a),
-        ageAtGrowth = Math.max(0, (rec.p.age || 0) - ((this.state?.day ?? 0) - (segment.born ?? 0)) / 365),
-        radius = rootThickness({ ...segment, originX: rec.p.x }) *
-          (0.36 + 1.49 * clamp(ageAtGrowth / 3));
+        radius = baseRadius * clamp(rootThickness({ ...segment, originX: rec.p.x }) / nominalRadius);
       dummy.position.copy(a).add(b).multiplyScalar(0.5);
       dummy.quaternion.setFromUnitVectors(up, delta.clone().normalize());
       dummy.scale.set(radius, delta.length(), radius);
@@ -764,11 +863,10 @@ export class ForestView {
       count++;
     }
     rec.rootCount = segments.length;
+    rec.rootBaseRadius = baseRadius;
     rec.rootMesh.count = count;
-    rec.rootMesh.instanceMatrix.addUpdateRange(
-      startCount * 16,
-      (count - startCount) * 16,
-    );
+    const firstChanged = widthChanged ? 0 : startCount;
+    matrices.addUpdateRange(firstChanged * 16, (count - firstChanged) * 16);
     rec.rootMesh.instanceMatrix.needsUpdate = true;
   }
   sync(force = false) {
@@ -793,6 +891,7 @@ export class ForestView {
         r.leaves.material.dispose();
         r.proxy.dispose();
         r.proxy.material.dispose();
+        this.sheddingPlants.delete(r);
         this.records.delete(id);
       }
     this.pickables = this.pickables.filter((m) => ids.has(m.userData.pid));
@@ -1094,21 +1193,26 @@ export class ForestView {
     box(head, 0, 0, 0, 0.4, 0.4, 0.4, 0xd3ae86);
     box(head, -0.085, 0.035, 0.21, 0.045, 0.045, 0.015, 0x3a4031);
     box(head, 0.085, 0.035, 0.21, 0.045, 0.045, 0.015, 0x3a4031);
-    box(head, 0, 0.24, 0, 0.58, 0.09, 0.5, 0xd5ba76);
+    box(head, 0, 0.24, 0, 0.73, 0.09, 0.63, 0xd5ba76);
+    box(head, 0, -0.102, 0.207, 0.105, 0.018, 0.016, 0x654234);
+    for (const side of [-1, 1]) {
+      const corner = box(head, side * 0.062, -0.086, 0.207, 0.038, 0.016, 0.016, 0x654234);
+      corner.rotation.z = side * 0.65;
+    }
     box(head, 0, 0.33, 0, 0.37, 0.12, 0.35, 0xbda16c);
     this.legs = [];
     this.arms = [];
     for (const side of [-1, 1]) {
       const leg = new T.Group();
-      leg.position.set(side * 0.12, 0.72, 0);
+      leg.position.set(side * 0.14, 0.72, 0);
       this.farmer.add(leg);
-      box(leg, 0, -0.3, 0, 0.18, 0.6, 0.22, 0x40594b);
-      box(leg, 0, -0.665, 0.04, 0.2, 0.11, 0.3, 0x554c38);
+      box(leg, 0, -0.3, 0, 0.22, 0.6, 0.25, 0x40594b);
+      box(leg, 0, -0.665, 0.04, 0.24, 0.11, 0.33, 0x554c38);
       this.legs.push(leg);
       const arm = new T.Group();
-      arm.position.set(side * 0.3, 1.27, 0);
+      arm.position.set(side * 0.32, 1.27, 0);
       this.farmer.add(arm);
-      box(arm, 0, -0.26, 0, 0.15, 0.52, 0.2, 0xd3ae86);
+      box(arm, 0, -0.26, 0, 0.20, 0.52, 0.24, 0xd3ae86);
       this.arms.push(arm);
     }
     for (let i = 0; i < 8; i++)
@@ -1150,58 +1254,244 @@ export class ForestView {
     for (let i = 0; i < 10; i++) {
       const g = new T.Group();
       this.scene.add(g);
-      box(g, 0, 0, 0, 0.23, 0.17, 0.18, i < 7 ? 0xe6b44a : 0x9a6b98);
-      if (i < 7) box(g, 0.02, 0, 0.07, 0.045, 0.12, 0.02, 0x403d30);
-      const wing = box(
-        g,
-        0,
-        0.08,
-        0,
-        i < 7 ? 0.34 : 0.38,
-        0.04,
-        0.1,
-        i < 7 ? 0xf2efd8 : 0xc9a3cf,
-      );
-      this.insects.push({ g, wing, i });
+      const bee = i < 7;
+      box(g, 0, 0, 0, bee ? 0.28 : 0.16, bee ? 0.19 : 0.08, bee ? 0.19 : 0.08,
+        bee ? 0xe6b44a : 0x2e2b25);
+      if (bee) {
+        box(g, -0.025, 0, 0, 0.062, 0.197, 0.198, 0x24231f);
+        box(g, 0.16, 0, 0, 0.08, 0.115, 0.115, 0x24231f);
+      }
+      const wings = [-1, 1].map(side => {
+        const hinge = new T.Group();
+        hinge.position.set(0, 0.064, side * 0.06);
+        box(hinge, 0, 0, side * 0.105, bee ? 0.16 : 0.23, 0.024, 0.21,
+          bee ? 0xf4f2e4 : 0xf5db78);
+        if (!bee) box(hinge, 0, 0.014, side * 0.17, 0.18, 0.009, 0.035, 0x3b3326);
+        g.add(hinge);
+        return hinge;
+      });
+      const name = bee ? "Japanese long-tongued bumblebee" : "Asian swallowtail";
+      const species = bee ? "Bombus diversus" : "Papilio xuthus";
+      this.insects.push({ g, wings, i, name, species });
     }
   }
-  spawn(kind, x, y, count = 5, z = 3.2, leafSpecies) {
-    if (leafSpecies && !autumnMaterials.has(leafSpecies.id)) {
-      autumnMaterials.set(leafSpecies.id, new T.MeshLambertMaterial({
-        map: stamp(leafSpecies).texture,
-        color: 0xca944c,
-        side: T.DoubleSide,
-        alphaTest: 0.45,
-      }));
+  insectAt(x, y) {
+    let closest = null;
+    let distance = 13;
+    for (const insect of this.insects) {
+      if (!insect.g.visible) continue;
+      const p = insect.g.position;
+      const screen = this.project(p.x, p.y, p.z);
+      const d = Math.hypot(screen.x - x, screen.y - y);
+      if (d < distance) {
+        closest = insect;
+        distance = d;
+      }
     }
+    return closest;
+  }
+  makeBirds() {
+    this.birds = [0, 1].map(i => {
+      const g = new T.Group();
+      const plumage = i ? 0x706962 : 0x99a748;
+      const body = new T.Mesh(fruitGeometry, material(plumage));
+      body.scale.set(0.4, 0.24, 0.23);
+      body.position.y = 0.18;
+      g.add(body);
+      const head = new T.Group();
+      head.position.set(0.13, 0.25, 0);
+      const skull = new T.Mesh(fruitGeometry, material(plumage));
+      skull.scale.setScalar(0.19);
+      head.add(skull);
+      box(head, 0.11, -0.025, 0, 0.13, 0.047, 0.05, 0x574836);
+      for (const side of [-1, 1]) {
+        box(head, 0.019, 0.015, side * 0.085, 0.051, 0.052, 0.015, i ? 0x925c43 : 0xfff3d4);
+        box(head, 0.023, 0.019, side * 0.096, 0.024, 0.026, 0.01, 0x292821);
+        box(g, 0.03, 0.055, side * 0.055, 0.024, 0.105, 0.023, 0x7e604b);
+      }
+      g.add(head);
+      const tail = box(g, -0.25, 0.17, 0, i ? 0.27 : 0.19, 0.045, 0.115, plumage);
+      tail.rotation.z = -0.22;
+      const wings = [-1, 1].map(side => {
+        const wing = new T.Group();
+        wing.position.set(-0.04, 0.2, side * 0.04);
+        box(wing, 0, 0, side * 0.14, 0.22, 0.027, 0.31, plumage);
+        g.add(wing);
+        return wing;
+      });
+      const side = i ? 1 : -1;
+      g.position.set(side * 13, 7 + i * 2, 3);
+      g.scale.setScalar(i ? 1.22 : 0.92);
+      this.scene.add(g);
+      return { g, wings, head, side, i, perch: null, fruit: null, arrived: null,
+        target: new T.Vector3(), takeoff: new T.Vector3() };
+    });
+  }
+  animateBirds(dt, time) {
+    const trees = [...this.records.values()].filter(r =>
+      r.p.planted && r.p.health > 45 && r.height > 2 && (r.p.wild || r.p.age >= 1));
+    for (const bird of this.birds) {
+      if (!bird.perch || !trees.includes(bird.perch) ||
+          (bird.arrived !== null && time - bird.arrived > 4.5 + bird.i)) {
+        const planted = trees.filter(r => !r.p.wild && r !== bird.perch);
+        const woodland = trees.filter(r => r.p.wild && Math.sign(r.p.x) === bird.side &&
+          Math.abs(r.p.x) < 31 && r !== bird.perch);
+        const options = planted.length && random(time + bird.i) < 0.65 ? planted : woodland;
+        if (!options.length) continue;
+        const fruitTrees = options.filter(r => r.fruits.some(fruit => fruit.visible));
+        const picks = fruitTrees.length ? fruitTrees : options;
+        bird.perch = picks[Math.floor(random(time * 3 + bird.i) * picks.length)];
+        bird.fruit = bird.perch.fruits.find(fruit => fruit.visible) ?? null;
+        bird.arrived = null;
+        bird.departed = time;
+        bird.takeoff.copy(bird.g.position);
+        bird.flightDuration = null;
+      }
+      const { g, perch, fruit, wings, head } = bird;
+      if (fruit) {
+        fruit.getWorldPosition(bird.target);
+        bird.target.x -= 0.18 * bird.side;
+        bird.target.y -= 0.09;
+      } else {
+        perch.g.updateWorldMatrix(true, false);
+        bird.target.copy(perch.perch).applyMatrix4(perch.g.matrixWorld);
+      }
+      const moving = bird.arrived === null;
+      if (moving) {
+        bird.flightDuration ??= Math.max(1.4, bird.takeoff.distanceTo(bird.target) / 3.7);
+        const progress = clamp((time - bird.departed) / bird.flightDuration);
+        const arc = Math.sin(progress * Math.PI);
+        const oldX = g.position.x;
+        g.position.lerpVectors(bird.takeoff, bird.target, progress);
+        g.position.x -= bird.side * arc * 1.8;
+        g.position.y += arc * 0.85;
+        g.position.z += arc * 0.65;
+        if (Math.abs(g.position.x - oldX) > 0.015)
+          g.rotation.y = g.position.x > oldX ? 0 : Math.PI;
+        if (progress === 1) bird.arrived = time;
+      } else {
+        g.position.copy(bird.target);
+        if (fruit) g.rotation.y = bird.side > 0 ? 0 : Math.PI;
+      }
+      const peck = bird.arrived !== null && fruit && fruit.visible && time - bird.arrived > 0.65;
+      head.rotation.z = peck ? -Math.abs(Math.sin(time * 14)) * 0.55 : 0;
+      if (peck && time - bird.arrived > 1.5) {
+        fruit.visible = false;
+        perch.p.fruitEaten ??= {};
+        perch.p.fruitEaten[fruit.userData.fruitIndex] = Math.floor(this.state.day / 365);
+      }
+      wings.forEach((wing, index) => {
+        wing.rotation.x = (index ? 1 : -1) * (moving ? Math.sin(time * 18 + bird.i) * 0.92 : 1.22);
+      });
+    }
+  }
+  spawn(kind, x, y, count = 5) {
     for (let i = 0; i < count; i++) {
       const px = x + (random(this.time + i) - 0.5) * 0.25;
       const py = y + random(i) * 0.2;
-      let mesh;
-      if (leafSpecies) {
-        mesh = new T.Mesh(leafGeometry, autumnMaterials.get(leafSpecies.id));
-        mesh.position.set(px, py, z);
-        mesh.scale.set(0.26, 0.4, 1);
-        this.scene.add(mesh);
-      } else {
-        const water = kind === "water";
-        const color = water ? 0x69bce7 : kind === "compost" ? 0x463120 : kind === "dig" ? 0x786049 : 0xc79a56;
-        mesh = box(this.scene, px, py, z, water ? 0.045 : 0.1,
-          water ? 0.16 : 0.035, 0.035, color);
-      }
+      const water = kind === "water";
+      const color = water ? 0x69bce7 : kind === "compost" ? 0x463120 : kind === "dig" ? 0x786049 : 0xc79a56;
+      const mesh = box(this.scene, px, py, 3.2, water ? 0.045 : 0.1,
+        water ? 0.16 : 0.035, 0.035, color);
       this.effects.push({
         mesh,
         vx: (random(i + this.time) - 0.5) * 0.6,
-        vy: kind === "water" ? -3 : kind === "compost" ? -0.7 : kind === "leaf" ? -0.15 : 1 + random(i),
+        vy: water ? -3 : kind === "compost" ? -0.7 : 1 + random(i),
         kind,
-        life: kind === "leaf" ? 55 : 3,
+        life: 3,
       });
+    }
+  }
+  releaseLeaf(rec, release, time) {
+    rec.g.updateWorldMatrix(true, false);
+    const position = new T.Vector3(), rotation = new T.Quaternion(), size = new T.Vector3();
+    this.leafMatrix.multiplyMatrices(rec.g.matrixWorld, release.matrix).decompose(position, rotation, size);
+    const tint = new T.Color();
+    rec.leaves.getColorAt(release.slot, tint);
+    tint.multiply(rec.leaves.material.color);
+    let batch = this.fallingLeaves.get(rec.sp.id);
+    if (!batch) {
+      const material = new T.MeshLambertMaterial({
+        map: rec.stamp.texture,
+        side: T.DoubleSide,
+        alphaTest: 0.45,
+      });
+      batch = { material, leaves: [], mesh: null };
+      this.fallingLeaves.set(rec.sp.id, batch);
+    }
+    batch.leaves.push({ position, rotation, size, tint, time, landed: null,
+      phase: random(position.x * 17 + position.y * 19) * Math.PI * 2 });
+  }
+  animateLeaves(dt, time) {
+    for (const rec of this.sheddingPlants) {
+      for (const [leaf, release] of rec.shedding) {
+        const progress = clamp((time - release.at) / release.duration);
+        if (!progress) continue;
+        if (progress === 1) {
+          this.releaseLeaf(rec, release, time);
+          rec.shedding.delete(leaf);
+        }
+        this.leafScale.set(1 - progress, 1 - progress, 1);
+        this.leafMatrix.copy(release.matrix).scale(this.leafScale);
+        rec.leaves.setMatrixAt(release.slot, this.leafMatrix);
+        rec.leaves.instanceMatrix.needsUpdate = true;
+      }
+      if (!rec.shedding.size) this.sheddingPlants.delete(rec);
+    }
+    for (const batch of this.fallingLeaves.values()) {
+      const leaves = batch.leaves;
+      const capacity = batch.mesh?.instanceMatrix.count ?? 0;
+      if (leaves.length > capacity) {
+        if (batch.mesh) {
+          this.scene.remove(batch.mesh);
+          batch.mesh.dispose();
+        }
+        batch.mesh = new T.InstancedMesh(leafGeometry, batch.material,
+          Math.max(128, capacity * 2, leaves.length));
+        batch.mesh.frustumCulled = false;
+        batch.mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+        batch.mesh.count = 0;
+        this.scene.add(batch.mesh);
+      }
+      let count = 0;
+      for (const leaf of leaves) {
+        const { position, phase, size } = leaf;
+        if (leaf.landed === null) {
+          const flutter = time * 4.2 + phase;
+          position.x += dt * (this.wind * 14 + Math.sin(flutter) * 0.45);
+          position.z += dt * Math.cos(flutter * 0.8) * 0.22;
+          position.y -= dt * (1.12 + Math.sin(flutter) * 0.29);
+          this.leafTransform.quaternion.copy(leaf.rotation);
+          this.leafTransform.rotateX(Math.sin(flutter) * 1.4);
+          this.leafTransform.rotateZ((time - leaf.time) * 1.6);
+          if (position.y <= 0.05) {
+            leaf.landed = time;
+            position.y = 0.045;
+            position.z = clamp(position.z, -3.5, 1.95);
+            this.landedLeaves.push({ x: position.x, area: size.x * size.y });
+          }
+        }
+        const rest = leaf.landed === null ? 0 : time - leaf.landed;
+        if (rest > 16) continue;
+        if (leaf.landed !== null) this.leafTransform.rotation.set(-Math.PI / 2, 0, phase);
+        this.leafTransform.position.copy(position);
+        this.leafTransform.scale.copy(size).multiplyScalar(1 - clamp((rest - 7) / 9));
+        this.leafTransform.updateMatrix();
+        batch.mesh.setMatrixAt(count, this.leafTransform.matrix);
+        batch.mesh.setColorAt(count, leaf.tint);
+        leaves[count++] = leaf;
+      }
+      leaves.length = count;
+      if (!batch.mesh) continue;
+      batch.mesh.count = count;
+      batch.mesh.instanceMatrix.needsUpdate = true;
+      if (batch.mesh.instanceColor) batch.mesh.instanceColor.needsUpdate = true;
     }
   }
   uproot(p) {
     const r = this.records.get(p.id);
     if (!r) return;
-    this.highlight(null);
+    if (this.hover === p) this.highlight(null);
     const floorDepth = 1.65;
     for (let i = 0; i < 9; i++) {
       const mesh = box(this.scene, p.x, 0.12 + random(i) * r.height * 0.8,
@@ -1240,18 +1530,19 @@ export class ForestView {
           : 0.6
         : 0;
     }
-    const delta = this.target - this.farmerX,
-      moving = Math.abs(delta) > 0.04;
-    this.farmerX += Math.sign(delta) * Math.min(Math.abs(delta), dt * 2.8);
+    const delta = this.target - this.farmerX;
+    const step = Math.sign(delta) * Math.min(Math.abs(delta), dt * 2.8);
+    this.farmerX += step;
+    const moving = Math.abs(this.target - this.farmerX) > 0.025;
     this.farmer.position.x = this.farmerX;
-    this.legs.forEach(
-      (g, i) =>
-        (g.rotation.z = moving ? Math.sin(time * 9 + i * Math.PI) * 0.22 : 0),
-    );
-    this.arms.forEach(
-      (g, i) =>
-        (g.rotation.z = moving ? Math.sin(time * 9 + i * Math.PI) * -0.35 : 0),
-    );
+    const yaw = moving ? Math.sign(delta) * Math.PI / 2 : 0;
+    this.farmer.rotation.y += (yaw - this.farmer.rotation.y) * Math.min(1, dt * 11);
+    this.legs.forEach((leg, i) => {
+      leg.rotation.x = moving ? Math.sin(time * 9 + i * Math.PI) * 0.35 : 0;
+    });
+    this.arms.forEach((arm, i) => {
+      arm.rotation.x = moving ? Math.sin(time * 9 + i * Math.PI) * -0.47 : 0;
+    });
     this.drainUpdates();
     this.wind = Math.sin(time * 0.82) * 0.014 + Math.sin(time * 0.29) * 0.007;
     for (const r of this.records.values()) {
@@ -1263,6 +1554,7 @@ export class ForestView {
         r.group.position.y = r.p.drop;
       }
     }
+    this.animateLeaves(dt, time);
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.life -= dt;
@@ -1274,11 +1566,7 @@ export class ForestView {
         }
         continue;
       }
-      if (e.kind === "leaf") {
-        e.mesh.position.x += (0.22 + Math.sin(time * 3 + i) * 0.38) * dt;
-        e.vy = -0.85 + Math.sin(time * 4 + i) * 0.26;
-        e.mesh.rotation.x += Math.sin(time * 2 + i) * dt * 2;
-      } else e.vy -= dt * (e.kind === "water" ? 5 : 4);
+      e.vy -= dt * (e.kind === "water" ? 5 : 4);
       if (e.vz) e.mesh.position.z += e.vz * dt;
       e.mesh.position.x += e.vx * dt;
       e.mesh.position.y += e.vy * dt;
@@ -1312,7 +1600,7 @@ export class ForestView {
     const habitats = [-1, 1].map(side => flowering.filter(r =>
       r.p.wild && Math.sign(r.p.x) === side));
     const plantedFlowers = flowering.filter(r => !r.p.wild);
-    this.insects.forEach(({ g, wing, i }) => {
+    this.insects.forEach(({ g, wings, i }) => {
       const local = habitats[i % 2];
       const anchors = local.length ? local : plantedFlowers;
       g.visible = anchors.length > 0;
@@ -1341,8 +1629,11 @@ export class ForestView {
       g.position.x += dt * (Math.sin(phase * 2.1) * 0.44 + Math.cos(phase * 0.59) * 0.21);
       g.position.y = Math.max(0.25, g.position.y + dt * (Math.cos(phase * 2.6) * 0.29 + Math.sin(phase * 1.2) * 0.16));
       g.position.z += dt * Math.sin(phase * 1.55) * 0.31;
-      wing.rotation.z = Math.sin(time * (34 + i) + i) * 0.8;
+      wings.forEach((wing, index) => {
+        wing.rotation.x = (index ? 1 : -1) * Math.sin(time * (34 + i) + i) * 0.9;
+      });
     });
+    this.animateBirds(dt, time);
     const wet =
       this.state.phase >= 4 &&
       (Math.floor((this.state.day % 365) / 91.25) === 1

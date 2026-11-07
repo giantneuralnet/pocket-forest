@@ -352,6 +352,12 @@ export function prepareSoilAt(s, x, tool) {
   }
   if (!digging) s.prep[1] = s.prep[2] = true;
 }
+export function returnLeafToSoil(state, x, area) {
+  const cell = cellAt(state, x);
+  const dose = clamp(area, 0.01, 0.4);
+  cell.litter += dose * 0.25;
+  cell.n = clamp(cell.n + dose * 0.12, 0, 100);
+}
 export function returnWeedToSoil(s, weed) {
   for (let offset = -2; offset <= 2; offset++) {
     const cell = cellAt(s, weed.x + offset * CW, -CH * 0.5);
@@ -423,7 +429,6 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
       growRoots(s, p);
       p.nextRootDay = s.day + Math.max(3, Math.round(3 + p.age * 9));
     }
-    if (sp.deciduous && s.day % 365 === 274) cellAt(s, p.x).litter += 2.5;
   }
   s.weedDays += s.weeds.length;
   // Open, unmulched patches recruit often; mulch and a closed canopy lower the probability.

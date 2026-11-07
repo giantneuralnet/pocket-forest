@@ -1,4 +1,4 @@
-import { returnWeedToSoil, prepareSoilAt } from "./ecology.js";
+import { returnLeafToSoil, returnWeedToSoil, prepareSoilAt } from "./ecology.js";
 import { makeArchitecture, poseArchitecture, leafAttachment } from "./architecture.js";
 import { species, layers, sources } from "./species.js";
 import {
@@ -60,7 +60,6 @@ let tool = null,
   soilTime = 0,
   uiTime = 0,
   saveTime = 0,
-  dirty = true,
   resetting = false,
   toastTimer,
   pendingTreeTap = null;
@@ -536,16 +535,23 @@ function applyAt(x) {
   lastToolX = x;
   view.target = x;
 }
-function pluck(w) {
-  view.uproot(w);
-  state.weeds = state.weeds.filter((p) => p !== w);
-  returnWeedToSoil(state, w);
-  view.target = w.x;
+function clearWeeds(weeds) {
+  if (!weeds.length) return;
+  const removed = new Set(weeds);
+  for (const weed of weeds) {
+    view.uproot(weed);
+    returnWeedToSoil(state, weed);
+  }
+  state.weeds = state.weeds.filter(weed => !removed.has(weed));
   view.sync();
+  save();
+}
+function pluck(w) {
+  clearWeeds([w]);
+  view.target = w.x;
   highlight(null);
   hideTooltip();
   toast(`${byId(w.sid).name} pulled out and left to decompose.`);
-  save();
 }
 function showReview() {
   const s = state.review || score(state);
@@ -669,6 +675,17 @@ world.addEventListener("pointermove", (e) => {
   pointer = { x: e.clientX, y: e.clientY };
   if (!pointers.has(e.pointerId)) {
     if (e.pointerType !== "touch" && !tool) {
+      const insect = view.insectAt(e.clientX, e.clientY);
+      if (insect) {
+        highlight(null);
+        hideTooltip();
+        const el = $("tooltip");
+        el.innerHTML = `<strong>${insect.name}</strong><small><i>${insect.species}</i></small>`;
+        el.style.display = "block";
+        el.style.left = clamp(e.clientX + 15, 8, innerWidth - 245) + "px";
+        el.style.top = clamp(e.clientY + 19, 10, innerHeight - 75) + "px";
+        return;
+      }
       const soil = view.inspectSoil(e.clientX, e.clientY);
       if (soil) {
         highlight(null);
@@ -925,7 +942,16 @@ function frame(ms) {
     saveTime = 0;
   }
   const renderStart = performance.now();
+  const beforeWalk = view.farmerX;
   view.render(dt, ms / 1000, tool, pointer, applying || ms < toolActionUntil);
+  if ([4, 6].includes(state.phase) && beforeWalk !== view.farmerX) {
+    const left = Math.min(beforeWalk, view.farmerX) - 0.24;
+    const right = Math.max(beforeWalk, view.farmerX) + 0.24;
+    clearWeeds(state.weeds.filter(weed => weed.x >= left && weed.x <= right));
+  }
+  for (const leaf of view.landedLeaves.splice(0)) {
+    returnLeafToSoil(state, leaf.x, leaf.area);
+  }
   // Camera-relative overlays follow the same animation frame as the scene.
   updateWeedAlerts();
   $("world").dataset.renderMs = (performance.now() - renderStart).toFixed(1);

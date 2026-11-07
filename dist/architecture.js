@@ -26,7 +26,7 @@ export function makeArchitecture(sp, seed) {
     return nodes.length - 1;
   }
   function foliage(index, count = 3) {
-    count = Math.ceil(count * 1.25);
+    count = Math.ceil(count * 1.45);
     for (let i = 0; i < count; i++) {
       const s = random(seed + index * 11 + i),
         side = i % 2 ? 1 : -1;
@@ -36,7 +36,8 @@ export function makeArchitecture(sp, seed) {
         angle: side * (0.55 + s * 0.65),
         tilt: (random(seed + index * 29 + i * 7) - 0.5) * 1.7,
         roll: (random(seed + index * 13 + i * 23) - 0.5) * 1.3,
-        petiole: 0.012 + s * 0.014,
+        petiole: 0.006 + s * 0.014,
+        stalkWidth: 0.0015 + random(seed + index * 41 + i * 17) * 0.0024,
         size: 0.75 + random(index * 7 + i + seed) * 0.5,
         birth: nodes[index].birth + 0.06 + i * 0.015,
       });

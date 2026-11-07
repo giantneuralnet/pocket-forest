@@ -96,3 +96,63 @@ test("new root growth reuses its GPU buffer and preserves old instance matrices"
     mesh.geometry.parameters.radiusTop < mesh.geometry.parameters.radiusBottom,
   );
 });
+
+
+test("existing roots widen with the trunk without moving their centers", () => {
+  const v = Object.create(ForestView.prototype);
+  v.scene = new T.Scene();
+  v.rootAllocations = 0;
+  const rec = {
+    p: { x: 0, roots: [{ a: [0, 0], b: [0.1, -0.2], radiusA: 0.06 }] },
+    sp: { type: "tree" },
+    trunkRadius: 0.05,
+  };
+  v.updateRoots(rec);
+  const mesh = rec.rootMesh;
+  const matrix = new T.Matrix4();
+  mesh.getMatrixAt(0, matrix);
+  const center = new T.Vector3().setFromMatrixPosition(matrix);
+  const original = new T.Vector3().setFromMatrixScale(matrix);
+  assert.ok(original.x < rec.trunkRadius);
+  rec.trunkRadius *= 2;
+  v.updateRoots(rec);
+  mesh.getMatrixAt(0, matrix);
+  const wider = new T.Vector3().setFromMatrixScale(matrix);
+  assert.equal(rec.rootMesh, mesh);
+  assert.deepEqual(new T.Vector3().setFromMatrixPosition(matrix), center);
+  assert.ok(Math.abs(wider.x / original.x - 2) < 1e-6);
+  assert.ok(Math.abs(wider.y - original.y) < 1e-6);
+});
+
+test("a falling leaf keeps its blade dimensions and deposits litter only on impact", async () => {
+  const { freshState, returnLeafToSoil, cellAt } = await import("../dist/ecology.js");
+  const v = Object.create(ForestView.prototype);
+  v.scene = new T.Scene();
+  v.wind = 0;
+  v.sheddingPlants = new Set();
+  v.landedLeaves = [];
+  v.leafTransform = new T.Object3D();
+  const blade = {
+    position: new T.Vector3(2.1, 0.4, 1),
+    rotation: new T.Quaternion(),
+    size: new T.Vector3(0.24, 0.31, 1),
+    tint: new T.Color(0xbb7946),
+    time: 0, landed: null, phase: 0,
+  };
+  const batch = { material: new T.MeshLambertMaterial(), leaves: [blade], mesh: null };
+  v.fallingLeaves = new Map([["hackberry", batch]]);
+  v.animateLeaves(0.05, 0.05);
+  assert.equal(v.landedLeaves.length, 0);
+  const matrix = new T.Matrix4();
+  batch.mesh.getMatrixAt(0, matrix);
+  const size = new T.Vector3().setFromMatrixScale(matrix);
+  assert.ok(Math.abs(size.x - blade.size.x) < 1e-6 && Math.abs(size.y - blade.size.y) < 1e-6);
+  for (let i = 2; i <= 18; i++) v.animateLeaves(0.05, i * 0.05);
+  assert.equal(v.landedLeaves.length, 1);
+  const s = freshState();
+  const { x, area } = v.landedLeaves[0];
+  const before = cellAt(s, x).n;
+  returnLeafToSoil(s, x, area);
+  assert.ok(cellAt(s, x).litter > 0 && cellAt(s, x).n > before);
+  assert.equal(cellAt(s, 0).litter, 0);
+});
