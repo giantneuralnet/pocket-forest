@@ -294,20 +294,21 @@ export class ForestView {
     soilBase.position.set(0, -DEPTH / 2, -soilDepth / 2);
     soilBase.renderOrder = -2;
     this.ground.add(soilBase);
-    const bedrock = new T.Mesh(new T.PlaneGeometry(MAP_HALF * 2, 100),
-      new T.MeshBasicMaterial({ color: 0x3e3936, depthWrite: false }));
+    this.bedrockMaterial = new T.MeshBasicMaterial({ depthWrite: false });
+    const bedrock = new T.Mesh(new T.PlaneGeometry(MAP_HALF * 2, 100), this.bedrockMaterial);
     bedrock.position.set(0, -DEPTH - 50, -0.025);
     bedrock.renderOrder = -2;
     this.ground.add(bedrock);
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
-    const offsets = [10.1, 12.5, 14.8, 17.1, 19.4, 21.7, 24, 26.2, 28.3, 30.3, 32];
+    const woodlandX = (start, fraction) => start + (MAP_HALF - 1.1 - start) * fraction;
+    const treeCount = 11;
     for (const side of [-1, 1])
-      for (let i = 0; i < offsets.length; i++) {
+      for (let i = 0; i < treeCount; i++) {
         const sp = species[i % 10];
         const p = {
           id: "wild-" + side + "-" + i,
           sid: sp.id,
-          x: side * offsets[i],
+          x: side * woodlandX(HALF + 3, i / (treeCount - 1)),
           age: 12 + i,
           health: 96,
           seed: i * 3 + (side + 1) * 20,
@@ -323,7 +324,7 @@ export class ForestView {
         this.wild.push({
           id: "ground-" + side + "-" + i,
           sid: sp.id,
-          x: side * (9.4 + i * 1.74),
+          x: side * woodlandX(HALF + 2.5, i / 13),
           age: 3 + (i % 3),
           health: 95,
           seed: i + 80,
@@ -1004,6 +1005,13 @@ export class ForestView {
       color = new T.Color();
     for (let index = 0; index < COLS * ROWS; index++) this.paintSoilTile(index, color);
     this.soilMesh.instanceColor.needsUpdate = true;
+    color.setRGB(0, 0, 0);
+    const tileColor = new T.Color();
+    for (let c = 0; c < COLS; c++) {
+      this.soilMesh.getColorAt((ROWS - 1) * COLS + c, tileColor);
+      color.add(tileColor);
+    }
+    this.bedrockMaterial.color.copy(color.multiplyScalar(1 / COLS));
     for (let c = 0; c < COLS; c++) {
       const x = soilX(c),
         top = this.state.soil[c],

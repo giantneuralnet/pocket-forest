@@ -102,7 +102,8 @@ test("neighbor shelter gives a growth bonus in suitable light", () => {
   assert.ok(b.plants[0].biomass > a.plants[0].biomass);
 });
 test("saves from before the map grid start a fresh forest", () => {
-  const legacy = { ...freshState(), version: 2, phase: 5, budget: 3400, plants: [plant(1)] };
+  const current = freshState();
+  const legacy = { ...current, version: current.version - 1, phase: 5, budget: 3400, plants: [plant(1)] };
   const state = loadState(legacy);
   assert.equal(state.phase, 0);
   assert.equal(state.budget, 18000);

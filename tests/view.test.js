@@ -32,6 +32,7 @@ test("pinch zoom anchors the world point under the gesture center", () => {
 });
 test("two-axis panning moves the view horizontally and vertically", () => {
   const v = cameraView();
+  v.zoomAt(1.4, 500, 350);
   v.pan(80, 100);
   assert.ok(v.center.x < 0);
   assert.ok(v.center.y > 6);

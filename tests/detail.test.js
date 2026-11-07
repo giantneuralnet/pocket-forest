@@ -170,8 +170,8 @@ test("one seeded square grid gets wetter and richer with depth across the map", 
   assert.equal(CW, CH);
   const average = (row, key) => state.soil.slice(row * COLS, (row + 1) * COLS)
     .reduce((sum, cell) => sum + cell[key], 0) / COLS;
-  assert.ok(average(ROWS - 1, "n") > average(0, "n") + 15);
-  assert.ok(average(ROWS - 1, "m") > average(0, "m") + 14);
+  assert.ok(average(ROWS - 1, "n") > average(0, "n") + 30);
+  assert.ok(average(ROWS - 1, "m") > average(0, "m") + 26);
   assert.ok(average(0, "d") > average(ROWS - 1, "d"));
   const deep = sampleSoil(state, MAP_HALF - CW / 2, -DEPTH + CH / 2);
   assert.equal(deep, state.soil.at(-1));

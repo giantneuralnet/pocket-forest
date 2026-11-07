@@ -1,8 +1,9 @@
 import { species } from "./species.js";
+const SAVE_VERSION = 4;
 export const HALF = 20 / 3,
   PLOT_COLS = 40,
-  COLS = PLOT_COLS * 5,
-  ROWS = 10,
+  COLS = 134,
+  ROWS = 15,
   CW = (HALF * 2) / PLOT_COLS,
   CH = CW,
   DEPTH = ROWS * CH,
@@ -47,8 +48,8 @@ export function soilBaseline(x, y, seed = 0) {
     perlin(a * 0.8, b * 0.8, salt) + 0.28 * perlin(a * 1.9, b * 1.9, salt + 500);
   const depth = clamp(cy / DEPTH);
   return {
-    m: clamp(38 + 22 * depth + 30 * patch(cx + 0.21, cy, seed), 18, 87),
-    n: clamp(31 + 27 * depth + 43 * patch(cx, cy + 0.37, seed + 1501), 10, 88),
+    m: clamp(38 + 38 * depth + 30 * patch(cx + 0.21, cy, seed), 18, 94),
+    n: clamp(31 + 44 * depth + 43 * patch(cx, cy + 0.37, seed + 1501), 10, 95),
     d: 0.48 - 0.34 * depth,
     o: 0,
     c: 0,
@@ -78,7 +79,7 @@ export function rootThickness(segment) {
 }
 export function freshState(soilSeed = Math.floor(Math.random() * 1e7)) {
   return {
-    version: 3,
+    version: SAVE_VERSION,
     phase: 0,
     budget: 18000,
     reachedPhase: 0,
@@ -122,7 +123,7 @@ export function packState(state) {
   });
 }
 export function loadState(saved) {
-  if (saved?.version !== 3 || saved.soil?.length !== COLS * ROWS) return freshState();
+  if (saved?.version !== SAVE_VERSION || saved.soil?.length !== COLS * ROWS) return freshState();
   if (saved.storageFormat === 1) {
     for (const plant of [...saved.plants, ...saved.weeds]) {
       plant.roots = (plant.roots ?? []).map(([ax, ay, bx, by, born, radiusA, radiusB]) => ({
@@ -386,7 +387,10 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
   let lastSample = -1, sky;
   for (let c = 0; c < COLS; c++) {
     const plotColumn = c >= PLOT_FIRST && c < PLOT_END;
-    const sampleColumn = plotColumn ? c : Math.min(COLS - 1, Math.floor(c / 4) * 4 + 2);
+    const woodlandStart = c < PLOT_FIRST ? 0 : PLOT_END;
+    const woodlandEnd = c < PLOT_FIRST ? PLOT_FIRST : COLS;
+    const group = Math.floor((c - woodlandStart) / 4) * 4;
+    const sampleColumn = plotColumn ? c : Math.min(woodlandEnd - 1, woodlandStart + group + 2);
     if (sampleColumn !== lastSample) {
       sky = exposure(soilX(sampleColumn), 0, null);
       lastSample = sampleColumn;
