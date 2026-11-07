@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   freshState,
+  packState,
   migrate,
   addWater,
   hydrology,
@@ -126,4 +127,37 @@ test("soil varies in both moisture and nutrients across the bed", () => {
   const s = freshState();
   assert.ok(new Set(s.soil.map((c) => Math.round(c.m))).size > 12);
   assert.ok(new Set(s.soil.map((c) => Math.round(c.n))).size > 12);
+});
+
+
+test("even a full puddle infiltrates within two simulated days", () => {
+  const s = freshState(), control = structuredClone(s);
+  s.phase = control.phase = 4;
+  s.speed = control.speed = 30;
+  addWater(s, 0, 90);
+  for (let frame = 0; frame < 4; frame++) {
+    hydrology(s, 1 / 60);
+    hydrology(control, 1 / 60);
+  }
+  assert.equal(s.surface[32], 0);
+  assert.ok(s.soil[COLS + 32].m > control.soil[COLS + 32].m);
+  assert.ok(s.soil[31].m > control.soil[31].m);
+});
+
+test("a dead plant keeps its cause of death after reload and improved soil", () => {
+  const s = freshState(), oak = plant(11);
+  oak.health = 0.1;
+  s.plants = [oak];
+  for (const cell of s.soil) {
+    cell.m = 0;
+    cell.n = 95;
+  }
+  stepDay(s);
+  assert.equal(oak.health, 0);
+  assert.match(oak.deathReason, /dry soil around the roots/);
+  const saved = migrate(JSON.parse(packState(s)));
+  for (const cell of saved.soil) cell.m = 55;
+  stepDay(saved);
+  assert.equal(saved.plants[0].health, 0);
+  assert.equal(saved.plants[0].deathReason, oak.deathReason);
 });

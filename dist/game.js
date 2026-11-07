@@ -21,6 +21,7 @@ import {
   score,
 } from "./ecology.js";
 import { ForestView } from "./forest-view.js";
+import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
 let state = freshState();
@@ -42,6 +43,20 @@ try {
     "This forest needs WebGL. Open it in a browser with hardware acceleration enabled.";
   throw e;
 }
+const sound = new ForestAudio();
+$("sound").onclick = async () => {
+  const enabled = !sound.enabled;
+  $("sound").disabled = true;
+  try {
+    await sound.setEnabled(enabled);
+  } catch {
+    toast("Forest audio could not load.");
+  } finally {
+    $("sound").disabled = false;
+    $("sound").setAttribute("aria-pressed", String(sound.enabled));
+    $("sound").textContent = sound.enabled ? "Sound on" : "Sound off";
+  }
+};
 let framePeak = 0,
   frameCount = 0,
   framesOver16 = 0,
@@ -169,6 +184,7 @@ function openPlantNote(p) {
   const recorded = state.survey.includes(sp.id);
   panel(
     entry(sp) +
+      (p.health === 0 ? `<p class="death-note"><strong>Cause of death</strong><br>${p.deathReason || "Unknown. This save predates cause-of-death tracking."}</p>` : "") +
       `<p>Health <strong>${Math.round(p.health)}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m${!p.wild ? ` · light ${Math.round((p.light ?? 1) * 100)}%<br>Root-zone moisture ${Math.round(cellAt(state, p.x, -0.3).m)}%` : ""}</p>` +
       (recorded
         ? '<button class="notebook-added" disabled>✓ Added to Notebook</button>'
@@ -469,18 +485,34 @@ function updateStats() {
       ? "Free growth"
       : `${Math.max(0, 1095 - state.day)} days left`;
   $("progress").value = Math.min(1095, state.day);
-  if (!$("timeScale").options.length) {
-    $("timeScale").innerHTML = TIME_RATES.map(
-      (r) => `<option value="${r.value}">${r.label}</option>`,
-    ).join("");
-    $("timeScale").onchange = () => {
-      state.speed = +$("timeScale").value;
-      updateStats();
-    };
+  for (const button of $("speeds").children) {
+    button.setAttribute("aria-pressed", String(+button.dataset.rate === state.speed));
   }
-  $("timeScale").value = state.speed;
-  $("speeds").hidden = ![4, 6].includes(state.phase);
 }
+
+for (const rate of TIME_RATES) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.rate = rate.value;
+  button.setAttribute("aria-label", rate.label);
+  button.title = rate.label;
+  const shape = rate.icon === "pause"
+    ? '<path d="M5 4h3v12H5zm7 0h3v12h-3z"/>'
+    : rate.icon === "play"
+      ? '<path d="M6 3v14l11-7z"/>'
+      : rate.value === 30
+        ? '<path d="M1 4v12l6-6zm6 0v12l6-6zm6 0v12l6-6z"/>'
+        : '<path d="M2 4v12l8-6zm8 0v12l8-6z"/>';
+  const speedTag = rate.value === 7 ? "7×" : rate.value === 30 ? "30×" : "";
+  button.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${shape}</svg>${speedTag ? `<small>${speedTag}</small>` : ""}`;
+  button.onclick = () => {
+    state.speed = rate.value;
+    updateStats();
+    save();
+  };
+  $("speeds").append(button);
+}
+
 function enterPhase(phase) {
   const firstVisit = phase > (state.reachedPhase ?? state.phase);
   state.phase = phase;
@@ -552,13 +584,13 @@ function applyAt(point) {
     return;
   }
   state.budget -= price;
-  nextToolAt = now + (tool === "mulch" ? 480 : tool === "compost" ? 280 : 230);
+  nextToolAt = now + (tool === "mulch" ? 320 : tool === "compost" ? 240 : 190);
   toolActionUntil = now + 210;
   if (tool === "drainage") {
     prepareSoilAt(state, x, tool);
-    view.spawn("dig", x, 0.13, 6);
+    view.digParticles(x, 0.13, 6);
   } else {
-    view.pour(tool, pointer, x);
+    view.pour(tool, pointer);
   }
   view.target = x;
   updateStats();
@@ -583,6 +615,7 @@ function pluck(w) {
 }
 function showReview() {
   const s = state.review || score(state);
+  const grade = s.total >= 90 ? "A" : s.total >= 80 ? "B" : s.total >= 70 ? "C" : s.total >= 60 ? "D" : "F";
   const labels = {
     health: "Plant health",
     diversity: "Species variety",
@@ -592,7 +625,7 @@ function showReview() {
     weeds: "Weed control",
   };
   panel(
-    `<span class="eyebrow">Three-year forest review</span><h2>Your forest at three years.</h2><div class="score">${s.total}<small> / 100</small></div><p>${s.alive}/${s.planted} plants alive · ${s.variety} species · ${s.layers}/4 layers<br>${s.weeds} weeds remain; ${s.weedLoad} average during establishment.</p>${Object.entries(
+    `<h2>Great job.</h2><p>Here’s a snapshot of your forest after three years.</p><div class="forest-grade grade-${grade}" aria-label="Grade ${grade}">${grade}</div><div class="forest-score">${s.total} / 100</div><p>${s.alive}/${s.planted} plants alive · ${s.variety} species · ${s.layers}/4 layers<br>${s.weeds} weeds remain; ${s.weedLoad} average during establishment.</p>${Object.entries(
       s.points,
     )
       .map(
@@ -630,7 +663,7 @@ function updateWeedAlerts() {
       $("weedAlerts").appendChild(el);
       view.alerts.set(w.id, el);
     }
-    const p = view.project(w.x, plantHeight(w) * 0.72, w.z ?? 2.8);
+    const p = view.project(w.x, plantHeight(w) * 0.72, view.records.get(w.id)?.depth ?? 0.14);
     el.style.left = p.x + "px";
     el.style.top = p.y + "px";
     el.hidden =
@@ -667,7 +700,7 @@ world.addEventListener("pointerdown", (e) => {
       e.clientY,
       e.pointerType === "touch" ? 24 : 12,
     ),
-    point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 1);
+    point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 0);
   if (!tool) view.target = point.x;
   if (!tool && point.y < 0) {
     const soil = view.inspectSoil(e.clientX, e.clientY);
@@ -741,7 +774,7 @@ world.addEventListener("pointermove", (e) => {
     dy = e.clientY - gesture.lastY;
   if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 6)
     gesture.moved = true;
-  const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 1);
+  const point = view.worldPoint(e.clientX, e.clientY, tool ? 3.02 : 0);
   if (gesture.plant) {
     if (gesture.moved) positionSeedling(gesture.plant, point.x);
   } else if (tool && applying) {
@@ -919,14 +952,14 @@ function frame(ms) {
     applyAt(view.worldPoint(pointer.x, pointer.y, 3.02));
   }
   for (const x of view.pendingWater.splice(0)) {
-    addWater(state, x, 1.6);
+    addWater(state, x, 6);
     for (
       let c = Math.max(0, colAt(x) - 1);
       c <= Math.min(COLS - 1, colAt(x) + 1);
       c++
     ) {
       state.watered[c] = true;
-      if (c !== colAt(x)) addWater(state, -HALF + (c + 0.5) * CW, 0.5);
+      if (c !== colAt(x)) addWater(state, -HALF + (c + 0.5) * CW, 1.4);
     }
   }
   for (const x of view.pendingMulch.splice(0)) {
@@ -935,7 +968,7 @@ function frame(ms) {
       c <= Math.min(COLS - 1, colAt(x) + 1);
       c++
     )
-      state.soil[c].mulch = clamp(state.soil[c].mulch + 0.12);
+      state.soil[c].mulch = clamp(state.soil[c].mulch + 0.24);
   }
   for (const x of view.pendingCompost.splice(0)) {
     const first = state.phase === 1 && !state.prep[2];
@@ -952,7 +985,7 @@ function frame(ms) {
       if (review) {
         state.phase = 5;
         state.reachedPhase = Math.max(state.reachedPhase ?? 0, 5);
-        state.speed = 1 / 86400;
+        state.speed = 0;
         state.review = score(state);
         view.sync();
         updateUI();
@@ -981,6 +1014,7 @@ function frame(ms) {
   const renderStart = performance.now();
   const beforeWalk = view.farmerX;
   view.render(dt, ms / 1000, tool, pointer, applying || ms < toolActionUntil);
+  sound.update(view, state, ms / 1000);
   if ([4, 6].includes(state.phase) && beforeWalk !== view.farmerX) {
     const left = Math.min(beforeWalk, view.farmerX) - 0.24;
     const right = Math.max(beforeWalk, view.farmerX) + 0.24;

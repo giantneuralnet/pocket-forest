@@ -27,14 +27,13 @@
         <div id="timeline" hidden>
           <div><span id="date"></span><span id="remaining"></span></div>
           <progress id="progress" max="1095" aria-label="Tending progress"></progress>
+          <div id="speeds" role="group" aria-label="Simulation speed"></div>
         </div>
       </div>
     </div>
     <div id="bottomHUD">
       <div id="stageBin" aria-label="Stage actions">
         <div id="actions"></div>
-        <label id="speeds" hidden
-          ><select id="timeScale" aria-label="Simulation speed"></select></label>
         <button id="back">← Back</button>
         <button id="next" class="primary"></button>
       </div>
@@ -51,6 +50,7 @@
             ><meter id="nutrientMeter" min="0" max="100"></meter></span
           ><span id="weather"></span>
         </div>
+        <button id="sound" aria-pressed="false" aria-label="Enable forest sound">♪ Sound off</button>
         <button id="about" aria-label="About the forest">?</button>
         <button id="restart" aria-label="Start again">↻</button>
       </div>

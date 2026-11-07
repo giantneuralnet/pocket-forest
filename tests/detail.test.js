@@ -50,12 +50,12 @@ test("mature roots grow more slowly and every segment tapers", () => {
   assert.ok(length(old.roots[0]) < length(young.roots[0]));
   assert.ok(young.roots[0].radiusB < rootThickness(young.roots[0]));
 });
-test("time options contain real time, day, week and month with no pause", () => {
+test("time options contain pause and four progressively faster playback rates", () => {
   assert.deepEqual(
     TIME_RATES.map((r) => r.value),
-    [1 / 86400, 1, 7, 30],
+    [0, 1, 3, 7, 30],
   );
-  assert.ok(TIME_RATES.every((r) => r.value > 0));
+  assert.equal(TIME_RATES[0].label, "Pause");
 });
 test("trunk widths taper toward the top while leaves retain branch anchors", () => {
   const tree = makeArchitecture(getSpecies("oak"), 42),

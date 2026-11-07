@@ -12,10 +12,11 @@ export const random = (n) => {
 };
 export const getSpecies = (id) => species.find((s) => s.id === id);
 export const TIME_RATES = [
-  { label: "Real time", value: 1 / 86400 },
-  { label: "1 day / sec", value: 1 },
-  { label: "1 week / sec", value: 7 },
-  { label: "1 month / sec", value: 30 },
+  { label: "Pause", value: 0, icon: "pause" },
+  { label: "Play · 1 day per second", value: 1, icon: "play" },
+  { label: "Fast forward · 3 days per second", value: 3, icon: "fast" },
+  { label: "Super fast forward · 1 week per second", value: 7, icon: "super" },
+  { label: "Triple fast forward · 1 month per second", value: 30, icon: "triple" },
 ];
 export function soilBaseline(x, y) {
   return {
@@ -234,19 +235,26 @@ export const raining = (day) =>
 export function addWater(s, x, amount = 10) {
   s.surface[colAt(x)] = clamp(s.surface[colAt(x)] + amount, 0, 90);
 }
-// Real-time infiltration is deliberately separate from calendar time. A pour ponds first.
+// A pour ponds first, then infiltrates over roughly one to two simulated days.
 const waterBuffers = new WeakMap();
 export function hydrology(s, dt) {
-  const factor = 1 + Math.sqrt(s.speed || 0) * 0.6;
+  const factor = [4, 6].includes(s.phase) ? s.speed : 1;
+  if (!factor) return;
+  const diffusion = Math.min(dt * factor, 0.8);
   for (let c = 0; c < COLS; c++) {
     const top = s.soil[c],
       flux = Math.min(
         s.surface[c],
-        dt * factor * (0.7 + top.d * 1.3),
-        (100 - top.m) * 0.05,
+        dt * factor * (45 + top.d * 19),
       );
     s.surface[c] -= flux;
-    top.m = clamp(top.m + flux * 1.8, 0, 100);
+    let moisture = flux * 1.35;
+    for (let r = 0; r < ROWS && moisture > 0; r++) {
+      const cell = s.soil[r * COLS + c];
+      const absorbed = Math.min(moisture, 100 - cell.m);
+      cell.m += absorbed;
+      moisture -= absorbed;
+    }
   }
   let transfer = waterBuffers.get(s);
   if (!transfer) {
@@ -261,12 +269,12 @@ export function hydrology(s, dt) {
       if (r < ROWS - 1) {
         const below = s.soil[i + COLS],
           f =
-            Math.max(0, a.m - below.m + 5) * dt * factor * 0.025 * (0.3 + a.d);
+            Math.max(0, a.m - below.m + 5) * diffusion * 0.30 * (0.3 + a.d);
         transfer[i] -= f;
         transfer[i + COLS] += f;
       }
       if (c < COLS - 1) {
-        const f = (a.m - s.soil[i + 1].m) * dt * factor * 0.008;
+        const f = (a.m - s.soil[i + 1].m) * diffusion * 0.095;
         transfer[i] -= f;
         transfer[i + 1] += f;
       }
@@ -410,7 +418,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     top.mulch = Math.max(0, top.mulch - 0.00013);
   }
   for (const p of [...s.plants, ...s.weeds]) {
-    if (!p.planted) continue;
+    if (!p.planted || p.health === 0) continue;
     const sp = getSpecies(p.sid);
     p.age = (p.age || 0) + 1 / 365;
     const e = exposure(p.x, plantHeight(p) * 0.72, p.id);
@@ -437,6 +445,33 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
       0,
       100,
     );
+    if (fitness < 0.48) {
+      const deficit = 0.48 - fitness;
+      const stress = p.stressHistory ??= [0, 0, 0, 0];
+      stress[m < sp.water ? 0 : 1] += (1 - moisture) * deficit;
+      stress[2] += (1 - nutrients) * deficit;
+      stress[3] += Math.max(0, 1 - light) * deficit;
+    } else if (p.stressHistory) {
+      if (p.health >= 95) delete p.stressHistory;
+      else if (fitness > 0.48)
+        p.stressHistory = p.stressHistory.map(value => value * 0.997);
+    }
+    if (p.health === 0) {
+      const reasons = [
+        "dry soil around the roots",
+        "waterlogged soil around the roots",
+        "too few soil nutrients",
+        "too little light",
+      ];
+      const strongest = p.stressHistory
+        .map((value, index) => ({ value, reason: reasons[index] }))
+        .sort((a, b) => b.value - a.value);
+      p.deathReason = strongest[1].value >= strongest[0].value * 0.8
+        ? `The strongest stresses were ${strongest[0].reason} and ${strongest[1].reason}.`
+        : `The strongest stress was ${strongest[0].reason}.`;
+      delete p.stressHistory;
+      continue;
+    }
     p.biomass = clamp(
       (p.biomass || 0) +
         (sp.height / 2100) * fitness * (1 + sheltered) * (p.health / 100),
@@ -459,7 +494,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     }
     if (p.health > 0 && s.day >= (p.nextRootDay ?? 0)) {
       growRoots(s, p);
-      p.nextRootDay = s.day + Math.max(3, Math.round(3 + p.age * 9));
+      p.nextRootDay = s.day + Math.round(6 + p.age * 15);
     }
   }
   s.weedDays += s.weeds.length;

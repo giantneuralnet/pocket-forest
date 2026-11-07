@@ -938,3 +938,32 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
 #topHUD .phase { width: min(380px, 100%); margin-right: 0; }
 
 #panel.shop-panel button:hover:not(:disabled) { background: #3a526d; }
+
+#timeline #speeds { display: flex; justify-content: center; gap: 4px; margin-top: 5px; }
+#speeds button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  justify-content: center;
+  min-width: 35px;
+  min-height: 30px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: #26374d;
+  color: #f5f8fc;
+  border-color: #506278;
+  box-shadow: none;
+}
+#speeds button[aria-pressed="true"] { background: #365f67; border-color: #8bc9b7; }
+#speeds svg { width: 16px; height: 16px; fill: currentColor; }
+#speeds small { font-size: 9px; }
+#topHUD #timeline:has(progress[hidden]) { min-width: 210px; }
+.forest-grade { font-size: clamp(58px, 10vw, 90px); line-height: 1; font-weight: 800; }
+.grade-A { color: #a8e4a9; }
+.grade-B { color: #8cd6c9; }
+.grade-C { color: #eed88e; }
+.grade-D { color: #f7b680; }
+.grade-F { color: #f7a29a; }
+.forest-score { font-size: 20px; margin-top: 4px; }
+.death-note { border-left: 3px solid #e89583; padding-left: 9px; }
+#toolBin #sound[aria-pressed="true"] { background: #365f67; }
