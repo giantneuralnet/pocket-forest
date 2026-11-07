@@ -1,5 +1,5 @@
 import { returnLeafToSoil, returnWeedToSoil, prepareSoilAt } from "./ecology.js";
-import { layers, sources } from "./species.js";
+import { layers } from "./species.js";
 import {
   HALF,
   COLS,
@@ -54,7 +54,8 @@ $("sound").onclick = async () => {
   } finally {
     $("sound").disabled = false;
     $("sound").setAttribute("aria-pressed", String(sound.enabled));
-    $("sound").textContent = sound.enabled ? "Sound on" : "Sound off";
+    $("sound").textContent = sound.enabled ? "🔊" : "🔇";
+    $("sound").title = sound.enabled ? "Turn sound off" : "Turn sound on";
   }
 };
 let framePeak = 0,
@@ -134,13 +135,13 @@ $("panel").addEventListener("close", () => {
 });
 function nativeText(sp) {
   return sp.native === true
-    ? "Native to the region"
+    ? "Native"
     : sp.native === false
-      ? "Introduced to Japan"
+      ? "Non-native"
       : "Native status unresolved";
 }
 function entry(sp) {
-  return `<span class="eyebrow">Field notebook · ${sp.jp}</span><h2>${sp.name}</h2><i>${sp.latin}</i><div><span class="badge ${sp.native === false ? "exotic" : ""}">${nativeText(sp)}</span><span class="badge">${sp.type === "weed" ? "Herb / weed" : layers[sp.layer]} · ${sp.height} m mature reference</span></div>${sp.photo ? `<img class="ref-photo" src="photos/${sp.photo}.jpg" alt="Reference photograph for ${sp.name}">` : ""}<p>${sp.desc}</p><p><strong>Identification:</strong> ${sp.confidence}</p>`;
+  return `<h2>${sp.name} <span class="plant-height">· ${sp.height} m</span></h2><i class="plant-latin">${sp.latin}</i><div class="plant-badges"><span class="badge ${sp.native === false ? "exotic" : ""}">${nativeText(sp)}</span><span class="badge">${sp.type === "weed" ? "Herb / weed" : layers[sp.layer]}</span></div>${sp.photo ? `<img class="ref-photo" src="photos/${sp.photo}.jpg" alt="Reference photograph for ${sp.name}">` : ""}<p>${sp.desc}</p>`;
 }
 function recordSurvey(p) {
   const sp = byId(p.sid);
@@ -192,11 +193,11 @@ function plantReadings(p) {
 function openPlantNote(p) {
   const sp = byId(p.sid);
   const recorded = state.survey.includes(sp.id);
-  const { health, moisture, nutrients, light } = plantReadings(p);
+  const readings = p.wild ? null : plantReadings(p);
   panel(
     entry(sp) +
       (p.health === 0 ? `<p class="death-note"><strong>Cause of death</strong><br>${p.deathReason || "Unknown. This save predates cause-of-death tracking."}</p>` : "") +
-      `<p>Health <strong>${health}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Height ${plantHeight(p).toFixed(1)} m<br>Root-zone moisture ${moisture}% · nutrients ${nutrients}%<br>Light ${light}%</p>` +
+      (readings ? `<p>Health <strong>${readings.health}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Current height ${plantHeight(p).toFixed(1)} m<br>Root-zone moisture ${readings.moisture}% · nutrients ${readings.nutrients}%<br>Light ${readings.light}%</p>` : "") +
       (recorded
         ? '<button class="notebook-added" disabled>✓ Added to Notebook</button>'
         : state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
@@ -227,8 +228,15 @@ function showTooltip(p, x, y, touch = false) {
   }
   const sp = byId(p.sid),
     el = $("tooltip");
-  const { health, moisture, nutrients, light } = plantReadings(p);
-  el.innerHTML = `<strong>${sp.name} · ${formatAge(p.age)}</strong><small>Health <b>${health}%</b><br>Moisture <b>${moisture}%</b> · Nutrients <b>${nutrients}%</b><br>Light <b>${light}%</b><br>${sp.type === "weed" ? "Tap to pull out" : p.wild ? (state.surveyPlants.includes(p.id) ? "Recorded · tap to inspect" : "Tap to survey") : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant"}</small>`;
+  const instruction = sp.type === "weed" ? "Tap to pull out"
+    : p.wild && !state.surveyPlants.includes(p.id) ? "Tap to survey"
+    : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant";
+  if (p.wild) {
+    el.innerHTML = `<strong>${sp.name} · ${sp.height} m</strong><small><i>${sp.latin}</i><br>${nativeText(sp)} · ${layers[sp.layer]}<br>${instruction}</small>`;
+  } else {
+    const { health, moisture, nutrients, light } = plantReadings(p);
+    el.innerHTML = `<strong>${sp.name} · ${formatAge(p.age)}</strong><small>Health <b>${health}%</b><br>Moisture <b>${moisture}%</b> · Nutrients <b>${nutrients}%</b><br>Light <b>${light}%</b><br>${instruction}</small>`;
+  }
   el.style.display = "block";
   el.style.left = clamp(x + 15, 8, innerWidth - el.offsetWidth - 8) + "px";
   el.style.top = clamp(y + 19, 10, innerHeight - el.offsetHeight - 8) + "px";
@@ -420,41 +428,42 @@ function updateUI() {
   n.hidden = false;
   n.disabled = false;
   if (p === 0) {
-    n.textContent = "Prepare soil";
+    n.title = "Prepare soil";
     n.disabled = surveyed < 5;
   }
   if (p === 1) {
     action(`${state.prep[0] ? "✓ " : ""}Drainage`, () => setTool("drainage"), tool === "drainage" ? "active-tool" : "");
-    action(`${state.prep[1] && state.prep[2] ? "✓ " : ""}Compost + organic matter`, () => setTool("compost"), tool === "compost" ? "active-tool" : "");
-    n.textContent = "Next · Buy & plant →";
+    action(`${state.prep[1] && state.prep[2] ? "✓ " : ""}Compost`, () => setTool("compost"), tool === "compost" ? "active-tool" : "");
+    n.title = "Next · Buy & plant";
   }
   if (p === 2) {
-    action("Open seedling shop", shop, "shop-button");
-    n.textContent = "Next · Mulch & water →";
+    action("Seedling shop", shop, "shop-button");
+    n.title = "Next · Mulch & water";
     n.disabled =
       state.plants.filter((p) => p.planted).length < 2 ||
       state.plants.some((p) => !p.planted);
   }
   if (p === 3) {
-    action("Mulch bag · ¥15", () => setTool("mulch"), tool === "mulch" ? "active-tool" : "");
-    action("Watering can · ¥5", () => setTool("water"), tool === "water" ? "active-tool" : "");
-    n.textContent = "Begin tending →";
+    action("Mulch · ¥15", () => setTool("mulch"), tool === "mulch" ? "active-tool" : "");
+    action("Water · ¥5", () => setTool("water"), tool === "water" ? "active-tool" : "");
+    n.title = "Begin tending";
   }
   if (p === 4 || p === 6) {
     action(
-      "Watering can · ¥5",
+      "Water · ¥5",
       () => setTool("water"),
       tool === "water" ? "active-tool" : "",
     );
-    action("Compost bag · ¥25", () => setTool("compost"), tool === "compost" ? "active-tool" : "");
+    action("Compost · ¥25", () => setTool("compost"), tool === "compost" ? "active-tool" : "");
     n.hidden = p === 6;
-    n.textContent = "Forest review →";
+    n.title = "Forest review";
     n.disabled = !state.review;
   }
   if (p === 5) {
     action("View review", showReview);
-    n.textContent = "Continue growing →";
+    n.title = "Continue growing";
   }
+  n.setAttribute("aria-label", n.title);
   $("stageBin").hidden = !$("actions").childElementCount;
   $("timeline").hidden = ![4, 6].includes(p);
   $("progress").hidden = p !== 4;
@@ -464,11 +473,6 @@ function updateUI() {
 }
 function updateStats() {
   $("money").textContent = "¥" + state.budget.toLocaleString();
-  $("count").textContent = state.survey.length;
-  const avg = (key) =>
-    Math.round(state.soil.reduce((a, c) => a + c[key], 0) / state.soil.length);
-  $("moisture").textContent = avg("m") + "%";
-  $("nutrients").textContent = avg("n") + "%";
   if (state.phase === 4 || state.phase === 6) {
     const surface = state.soil.slice(0, COLS * 3);
     const rootZoneMoisture = surface.reduce((sum, cell) => sum + cell.m, 0) / surface.length;
@@ -481,13 +485,9 @@ function updateStats() {
       ? advice[Math.floor(performance.now() / 5500) % advice.length]
       : phaseNames[state.phase];
   }
-  $("moistureMeter").value = avg("m");
-  $("nutrientMeter").value = avg("n");
-  $("weather").textContent = ["Spring", "Summer", "Autumn", "Winter"][
-    Math.floor((state.day % 365) / 91.25)
-  ];
+  const season = ["Spring", "Summer", "Autumn", "Winter"][Math.floor((state.day % 365) / 91.25)];
   $("date").textContent =
-    `Year ${Math.floor(state.day / 365) + 1} · ${$("weather").textContent} · Day ${Math.floor(state.day % 365) + 1}`;
+    `Year ${Math.floor(state.day / 365) + 1} · ${season} · Day ${Math.floor(state.day % 365) + 1}`;
   $("remaining").textContent =
     state.phase === 6
       ? "Free growth"
@@ -534,7 +534,7 @@ function enterPhase(phase) {
   if (phase !== 0 && Math.abs(view.farmerX) > HALF - 0.55) {
     view.farmerX = clamp(view.farmerX, -HALF + 0.55, HALF - 0.55);
   }
-  view.plot(true);
+  view.plot(true, phase === 0);
   view.sync();
   if (firstVisit && (phase === 4 || phase === 6)) state.speed = 1;
   updateUI();
@@ -621,9 +621,13 @@ function pluck(w) {
   hideTooltip();
   toast(`${byId(w.sid).name} pulled out and left to decompose.`);
 }
+function letterGrade(points, maximum = 100) {
+  const ratio = points / maximum;
+  return ratio >= 0.9 ? "A" : ratio >= 0.8 ? "B" : ratio >= 0.7 ? "C" : ratio >= 0.6 ? "D" : "F";
+}
 function showReview() {
   const s = state.review || score(state);
-  const grade = s.total >= 90 ? "A" : s.total >= 80 ? "B" : s.total >= 70 ? "C" : s.total >= 60 ? "D" : "F";
+  const grade = letterGrade(s.total);
   const labels = {
     health: "Plant health",
     diversity: "Species variety",
@@ -633,13 +637,14 @@ function showReview() {
     weeds: "Weed control",
   };
   panel(
-    `<h2>Great job.</h2><p>Here’s a snapshot of your forest after three years.</p><div class="forest-grade grade-${grade}" aria-label="Grade ${grade}">${grade}</div><div class="forest-score">${s.total} / 100</div><p>${s.alive}/${s.planted} plants alive · ${s.variety} species · ${s.layers}/4 layers<br>${s.weeds} weeds remain; ${s.weedLoad} average during establishment.</p>${Object.entries(
+    `<h2>Three Year End Review</h2><div class="forest-grade grade-${grade}" aria-label="Grade ${grade}">${grade}</div><div class="forest-score">${s.total} / 100</div><p>${s.alive}/${s.planted} plants alive · ${s.variety} species · ${s.layers}/4 layers<br>${s.weeds} weeds remain; ${s.weedLoad} average during establishment.</p>${Object.entries(
       s.points,
     )
-      .map(
-        ([k, v]) =>
-          `<div class="score-row"><span>${labels[k]}</span><strong>${v.toFixed(1)} / ${k === "layers" || k === "weeds" ? 10 : k === "native" ? 5 : 25}</strong></div>`,
-      )
+      .map(([key, points]) => {
+        const maximum = key === "layers" || key === "weeds" ? 10 : key === "native" ? 5 : 25;
+        const subgrade = letterGrade(points, maximum);
+        return `<div class="score-row"><span>${labels[key]}</span><strong class="grade-${subgrade}">${points.toFixed(1)} / ${maximum} <span class="subgrade" aria-label="Grade ${subgrade}">${subgrade}</span></strong></div>`;
+      })
       .join(
         "",
       )}<p>Density reaches its target at 20 surviving seedlings in this compressed planting strip; diversity reaches its target at seven species. A few healthy trees form a healthy start, but cannot earn a dense-forest score.</p><div class="review-actions"><button id="restartReview">Restart</button><button id="continueReview" class="primary">Continue growing →</button></div>`,
@@ -899,7 +904,7 @@ bin.addEventListener(
   true,
 );
 bin.addEventListener("pointercancel", () => (binDrag = null));
-$("home").onclick = () => { if (!tool) view.plot(true); };
+$("home").onclick = () => view.plot(true);
 window.addEventListener("resize", () => view.resize());
 window.addEventListener("keydown", (e) => {
   if ($("panel").open) return;
@@ -929,10 +934,6 @@ function confirmRestart(onCancel = null) {
   };
 }
 $("restart").onclick = () => confirmRestart();
-$("about").onclick = () =>
-  panel(
-    `<span class="eyebrow">Pocket Forest · Tokushima</span><h2>Learn by growing.</h2><p>Drag to pan in any direction. Use a pinch or trackpad pinch to zoom; a two-finger trackpad scroll pans. Plot returns to your planting area. Hover plants for names, health and age. During survey, tap a plant to open its field note and choose Add to Notebook. Weeds are pulled on the first tap.</p><p>Nearby plants provide a modest shelter bonus in this educational model. Partial shade can protect young shade-tolerant plants and reduce evaporation; deep shade can still limit growth. The score rewards density and diversity, as well as health and weed control.</p><p>Leaf textures are drawn once per species and reused as instances. Existing root segments remain fixed; only new tips seek moisture. Sunlight and canopy interception of rain use raycasts. Water ponds and infiltrates through the soil grid. Darker soil can indicate more nutrients or moisture. Worms emerge in moist, rich patches and carry nutrients to nearby soil. Mushrooms have individual lifetimes; they are not proof of nutrient sharing or forest health.</p><p>The front elevation compresses depth and density for interaction. Growth, weather, costs and scores are illustrative. Photo identifications remain tentative. Your supplied photographs retain their own copyright; original game code is MIT licensed.</p>${sources.map(([text, url]) => `<p><a href="${url}" target="_blank" rel="noopener">${text} ↗</a></p>`).join("")}`,
-  );
 const farmerBubble = $("phaseTitle");
 let bubbleWidth = 0;
 let bubbleHeight = 0;
@@ -1066,5 +1067,5 @@ if (state.phase === 2) {
   view.updateGhosts();
 }
 updateUI();
-view.plot();
+view.plot(false, state.phase === 0);
 requestAnimationFrame(frame);

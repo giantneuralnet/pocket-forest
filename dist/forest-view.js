@@ -22,7 +22,7 @@ import {
   rootThickness,
 } from "./ecology.js";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
-  rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 5, 1, true),
+  rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
 const boxGeometry = new T.BoxGeometry(1, 1, 1),
   leafGeometry = new T.PlaneGeometry(1, 1).translate(0, 0.405, 0),
@@ -222,6 +222,7 @@ export class ForestView {
     cloudGeometry.setAttribute("color", new T.Float32BufferAttribute(cloudColors, 3));
     const cloudMaterial = new T.MeshBasicMaterial({ color: 0xf7fbff, vertexColors: true });
     this.clouds = new T.Group();
+    this.cloudTravel = 0;
     for (let i = 0; i < 13; i++) {
       const cloud = new T.Group();
       cloud.position.set((i - 6) * 27, 30 + random(i + 78) * 28, -85 - random(i) * 12);
@@ -279,12 +280,18 @@ export class ForestView {
     this.ground = new T.Group();
     this.scene.add(this.ground);
     this.baseSoilColor = new T.Color().setHSL(0.069, 0.49, 0.061);
-    // The cutaway and the roots share z = 0. Draw the soil first without writing depth.
-    const soilBase = new T.Mesh(new T.PlaneGeometry(180, 120),
-      new T.MeshBasicMaterial({ color: this.baseSoilColor, depthWrite: false }));
-    soilBase.position.y = -60;
-    this.ground.add(soilBase);
+    // The soil volume extends behind the cutaway, keeping the face and roots at z = 0.
+    const soilDepth = 0.85;
+    const cutawayMaterial = new T.MeshBasicMaterial({ color: this.baseSoilColor, depthWrite: false });
+    const surfaceMaterial = new T.MeshBasicMaterial({
+      color: this.baseSoilColor.clone().offsetHSL(0, 0.02, 0.035),
+      depthWrite: false,
+    });
+    const soilBase = new T.Mesh(new T.BoxGeometry(180, 120, soilDepth),
+      [cutawayMaterial, cutawayMaterial, surfaceMaterial, cutawayMaterial, cutawayMaterial, cutawayMaterial]);
+    soilBase.position.set(0, -60, -soilDepth / 2);
     soilBase.renderOrder = -2;
+    this.ground.add(soilBase);
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
     const offsets = [12, 15.6, 19.5, 23, 27.5, 31, 35, 39, 44, 49, 55];
     for (const side of [-1, 1])
@@ -466,15 +473,14 @@ export class ForestView {
     this.center.y = clamp(this.center.y + before.y - after.y, -14, 32);
     this.projection();
   }
-  plot(animate = false) {
-    const survey = this.state.phase === 0;
+  plot(animate = false, overview = false) {
     const aspect = this.element.clientWidth / this.element.clientHeight;
     const baseHalf = Math.max(13, (aspect < 0.8 ? 15 : 24) / aspect);
-    const halfWidth = HALF + 0.46;
+    const halfWidth = HALF + 0.68;
     const tan = Math.tan(this.camera.fov * Math.PI / 360);
     const distance = halfWidth / (aspect * tan);
-    const zoom = survey ? 0.92 : baseHalf / (distance * tan);
-    const y = survey ? 8 : 0.3;
+    const zoom = overview ? 0.92 : baseHalf / (distance * tan);
+    const y = overview ? 8 : 0.3;
     if (animate) {
       this.cameraMove = { x: this.center.x, y: this.center.y, zoom: this.zoom, targetY: y, targetZoom: zoom, start: this.time };
     } else {
@@ -537,10 +543,10 @@ export class ForestView {
     const row = Math.floor(index / this.soilCols);
     const x = SOIL_LEFT + (index % this.soilCols + 0.5) * CW;
     if (Math.abs(x) < HALF) {
-      const cell = this.state.soil[Math.min(row, ROWS - 1) * COLS + colAt(x)];
+      const cell = sampleSoil(this.state, x, -(row + 0.5) * CH);
       const { h, s, l } = soilColorHSL(cell);
       const dug = row < 3 ? (cell.d - 0.15) * 0.014 * (1 - row / 3) : 0;
-      const depthBlend = clamp((row - ROWS + 1) / (this.soilRows - ROWS));
+      const depthBlend = clamp((row - ROWS + 1) / (this.soilRows - ROWS)) * 0.22;
       color.setHSL(h, s, l - dug).lerp(this.baseSoilColor, depthBlend);
     } else {
       color.copy(this.baseSoilColor);
@@ -924,9 +930,7 @@ export class ForestView {
         rootGeometry,
         new T.MeshLambertMaterial({
           color: rec.sp.type === "weed" ? 0xb59a77 : 0xc4a17b,
-          transparent: true,
-          opacity: 0.9,
-          depthWrite: false,
+
         }),
         1024,
       );
@@ -943,8 +947,13 @@ export class ForestView {
       const ratio = baseRadius / rec.rootBaseRadius;
       for (let i = 0; i < startCount; i++) {
         const offset = i * 16;
+        const { a, b } = segments[i];
+        const core = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const drawn = Math.hypot(...matrices.array.subarray(offset + 4, offset + 7));
+        const stretch = drawn > 0 ? (core + (drawn - core) * ratio) / drawn : 1;
         for (let axis = 0; axis < 3; axis++) {
           matrices.array[offset + axis] *= ratio;
+          matrices.array[offset + 4 + axis] *= stretch;
           matrices.array[offset + 8 + axis] *= ratio;
         }
       }
@@ -958,7 +967,7 @@ export class ForestView {
         radius = baseRadius * clamp(rootThickness({ ...segment, originX: rec.p.x }) / nominalRadius);
       dummy.position.copy(a).add(b).multiplyScalar(0.5);
       dummy.quaternion.setFromUnitVectors(up, delta.clone().normalize());
-      dummy.scale.set(radius, delta.length(), radius);
+      dummy.scale.set(radius, delta.length() + radius * 1.6, radius);
       dummy.updateMatrix();
       rec.rootMesh.setMatrixAt(i, dummy.matrix);
       count++;
@@ -1055,25 +1064,24 @@ export class ForestView {
     for (const worm of worms) {
       const x = -HALF + (worm.col + 0.5) * CW;
       const y = -(worm.row + 0.5) * CH;
-      const angle = Math.atan2(-worm.dy * CH, worm.dx * CW);
+      const tilt = -0.32 * (worm.dy || 0) * (worm.dx || 1);
       let pose = this.wormPoses.get(worm.id);
       if (!pose) {
-        pose = { x, y, angle };
+        pose = { x, y, tilt };
         this.wormPoses.set(worm.id, pose);
       }
       const ease = 1 - Math.exp(-dt * (4 + this.state.speed));
       pose.x += (x - pose.x) * ease;
       pose.y += (y - pose.y) * ease;
-      const turn = angle - pose.angle;
-      pose.angle += Math.atan2(Math.sin(turn), Math.cos(turn)) * ease;
-      const dx = Math.cos(pose.angle), dy = Math.sin(pose.angle);
+      pose.tilt += (tilt - pose.tilt) * (1 - Math.exp(-dt * 3));
+      const dx = Math.cos(pose.tilt), dy = Math.sin(pose.tilt);
       for (let i = 0; i < 8; i++) {
         const along = (3.5 - i) * 0.064;
-        const bend = Math.sin(time * 6 - i * 0.64 + worm.id) * 0.032;
+        const bend = Math.sin(time * 3.8 - i * 0.5 + worm.id) * 0.022;
         const taper = 1 - Math.abs(i - 3.5) * 0.11;
         dummy.position.set(pose.x + dx * along - dy * bend,
           Math.min(-0.045, pose.y + dy * along + dx * bend), 0);
-        dummy.rotation.z = pose.angle;
+        dummy.rotation.z = pose.tilt;
         dummy.scale.set(0.11, 0.09 * taper, 0.075 * taper);
         dummy.updateMatrix();
         this.wormMesh.setMatrixAt(count++, dummy.matrix);
@@ -1460,18 +1468,37 @@ export class ForestView {
       this.scene.add(g);
       const bee = i < 7;
       if (bee) g.scale.setScalar(0.78);
-      box(g, 0, 0, 0, bee ? 0.28 : 0.16, bee ? 0.19 : 0.08, bee ? 0.19 : 0.08,
-        bee ? 0xe6b44a : 0x2e2b25);
       if (bee) {
+        box(g, 0, 0, 0, 0.28, 0.19, 0.19, 0xe6b44a);
         box(g, -0.025, 0, 0, 0.062, 0.197, 0.198, 0x24231f);
         box(g, 0.16, 0, 0, 0.08, 0.115, 0.115, 0x24231f);
+      } else {
+        box(g, 0, 0, 0, 0.23, 0.082, 0.09, 0x282620);
+        for (const side of [-1, 1])
+          box(g, -0.026, 0.02, side * 0.044, 0.15, 0.018, 0.012, 0xf2e4ac);
       }
       const wings = [-1, 1].map(side => {
         const hinge = new T.Group();
-        hinge.position.set(0, 0.064, side * 0.06);
-        box(hinge, 0, 0, side * 0.105, bee ? 0.16 : 0.23, 0.024, 0.21,
-          bee ? 0xf4f2e4 : 0xf5db78);
-        if (!bee) box(hinge, 0, 0.014, side * 0.17, 0.18, 0.009, 0.035, 0x3b3326);
+        hinge.position.set(0, bee ? 0.064 : 0.025, side * (bee ? 0.06 : 0.032));
+        if (bee) {
+          box(hinge, 0, 0, side * 0.105, 0.16, 0.024, 0.21, 0xf4f2e4);
+        } else {
+          const shape = new T.Shape();
+          shape.moveTo(0.04, 0);
+          shape.lineTo(0.19, side * 0.19);
+          shape.lineTo(0.09, side * 0.34);
+          shape.lineTo(-0.12, side * 0.28);
+          shape.lineTo(-0.25, side * 0.26);
+          shape.lineTo(-0.18, side * 0.17);
+          shape.lineTo(-0.12, 0);
+          shape.closePath();
+          const wing = new T.Mesh(new T.ShapeGeometry(shape),
+            new T.MeshLambertMaterial({ color: 0xf3e4aa, side: T.DoubleSide }));
+          wing.rotation.x = Math.PI / 2;
+          hinge.add(wing);
+          box(hinge, -0.02, 0.002, side * 0.13, 0.19, 0.014, 0.031, 0x353025);
+          box(hinge, -0.055, 0.002, side * 0.22, 0.18, 0.014, 0.031, 0x353025);
+        }
         g.add(hinge);
         return hinge;
       });
@@ -1526,7 +1553,7 @@ export class ForestView {
       });
       const side = i ? 1 : -1;
       g.position.set(side * 13, 7 + i * 2, 3);
-      g.scale.setScalar(i ? 1.1 : 0.84);
+      g.scale.setScalar(i ? 1.36 : 1.04);
       this.scene.add(g);
       return { g, wings, head, side, i, perch: null, fruit: null, arrived: null,
         target: new T.Vector3(), takeoff: new T.Vector3() };
@@ -1717,8 +1744,10 @@ export class ForestView {
     this.bag.visible = tool === "mulch" || tool === "compost";
     for (const [name, label] of Object.entries(this.bagLabels)) label.visible = tool === name;
     this.shovel.visible = tool === "drainage";
+    const cloudRate = this.state.phase >= 4 ? this.state.speed : 1;
+    this.cloudTravel = (this.cloudTravel + dt * 0.24 * cloudRate) % 351;
     this.clouds.children.forEach((cloud, i) => {
-      cloud.position.x = ((i * 27 + 13.5 - time * 0.24) % 351 + 351) % 351 - 175.5;
+      cloud.position.x = (i * 27 + 13.5 - this.cloudTravel + 351) % 351 - 175.5;
     });
     this.can.visible = tool === "water";
     this.animateCamera(time);

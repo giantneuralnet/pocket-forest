@@ -18,25 +18,31 @@ export const TIME_RATES = [
   { label: "Super fast forward · 1 week per second", value: 7, icon: "super" },
   { label: "Triple fast forward · 1 month per second", value: 30, icon: "triple" },
 ];
-export function soilBaseline(x, y) {
+function perlin(x, y, seed) {
+  const col = Math.floor(x), row = Math.floor(y);
+  const dx = x - col, dy = y - row;
+  const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+  const gradient = (ix, iy, sx, sy) => {
+    const key = Math.imul(ix, 374761393) ^ Math.imul(iy, 668265263) ^ seed;
+    const direction = Math.imul(key ^ (key >>> 13), 1274126177) >>> 29;
+    const u = direction & 4 ? sy : sx, v = direction & 4 ? sx : sy;
+    return (direction & 1 ? -u : u) + (direction & 2 ? -v : v) * 0.5;
+  };
+  const left = gradient(col, row, dx, dy);
+  const lower = left + (gradient(col + 1, row, dx - 1, dy) - left) * fade(dx);
+  const upperLeft = gradient(col, row + 1, dx, dy - 1);
+  const upper = upperLeft + (gradient(col + 1, row + 1, dx - 1, dy - 1) - upperLeft) * fade(dx);
+  return lower + (upper - lower) * fade(dy);
+}
+
+export function soilBaseline(x, y, seed = 0) {
+  const cx = (Math.floor(x / CW) + 0.5) * CW;
+  const cy = (Math.floor(-y / CH) + 0.5) * CH;
+  const patch = (a, b, salt) =>
+    perlin(a * 0.8, b * 0.8, salt) + 0.28 * perlin(a * 1.9, b * 1.9, salt + 500);
   return {
-    m: clamp(
-      42 -
-        y * 2 +
-        Math.sin(x * 0.47) * 13 +
-        Math.cos(x * 0.19 + y) * 8 +
-        random(Math.floor(x / CW) + Math.floor(-y / CH) * 79) * 9,
-      12,
-      92,
-    ),
-    n: clamp(
-      36 +
-        Math.sin(x * 0.32 + y * 0.7) * 17 +
-        Math.cos(x * 0.81 - y * 0.3) * 9 +
-        random(Math.floor(x / CW) * 5 + Math.floor(-y / CH) * 17) * 12,
-      8,
-      88,
-    ),
+    m: clamp(47 + 40 * patch(cx + 0.21, cy, seed), 18, 82),
+    n: clamp(43 + 60 * patch(cx, cy + 0.37, seed + 1501), 10, 85),
     d: 0.15,
     o: 0,
     c: 0,
@@ -51,7 +57,7 @@ export function sampleSoil(s, x, y = 0, create = false) {
     return s.soil[row * COLS + col];
   const key = Math.floor(x / CW) + ":" + row;
   if (s.extraSoil?.[key]) return s.extraSoil[key];
-  const cell = soilBaseline(x, y);
+  const cell = soilBaseline(x, y, s.soilSeed);
   if (create) {
     s.extraSoil ??= {};
     s.extraSoil[key] = cell;
@@ -73,7 +79,7 @@ export function rootThickness(segment) {
   );
   return segment.radiusA ?? Math.max(0.006, 0.055 / (1 + depth * 1.4));
 }
-export function freshState() {
+export function freshState(soilSeed = Math.floor(Math.random() * 1e7)) {
   return {
     version: 2,
     phase: 0,
@@ -93,11 +99,13 @@ export function freshState() {
     review: null,
     weedDays: 0,
     soilVariation: 1,
+    soilSeed,
     extraSoil: {},
     soil: Array.from({ length: COLS * ROWS }, (_, i) => ({
       ...soilBaseline(
         -HALF + ((i % COLS) + 0.5) * CW,
         -(Math.floor(i / COLS) + 0.5) * CH,
+        soilSeed,
       ),
       d: 0.15,
       o: 0,
@@ -293,8 +301,8 @@ export function growRoots(s, p) {
   p.tips ??= [];
   if (!p.tips.length && p.roots.length === 0)
     p.tips = [
-      { x: p.x, y: -0.035, dir: -1, angle: -0.4, age: 0 },
-      { x: p.x, y: -0.035, dir: 1, angle: 0.4, age: 0 },
+      { x: p.x, y: -0.01, dir: -1, angle: -0.2, age: 0 },
+      { x: p.x, y: -0.01, dir: 1, angle: 0.2, age: 0 },
     ];
   if (p.roots.length >= 720) return;
   const next = [],
@@ -304,14 +312,15 @@ export function growRoots(s, p) {
     if (a.y <= -11.8) continue;
     const key = p.seed * 101 + s.day * 13 + i * 37,
       step =
-        (0.08 + random(key) * 0.125) * (0.15 + 0.85 / (1 + (p.age || 0) * 0.9)),
-      heading = a.angle ?? a.dir * 0.4;
+        (0.12 + random(key) * 0.17) * (0.15 + 0.85 / (1 + (p.age || 0) * 0.9)),
+      heading = a.angle ?? a.dir * 0.2;
+    const limit = !p.roots.length || (a.age === 0 && a.y >= -0.04) ? 0.46 : 1.49;
     const candidates = [-0.6, -0.3, 0, 0.3, 0.6]
       .map((turn, j) => {
         const angle = clamp(
             heading * 0.9 + turn + (random(key + j * 11) - 0.5) * 0.8,
-            -1.49,
-            1.49,
+            -limit,
+            limit,
           ),
           x = clamp(a.x + Math.sin(angle) * step, -69, 69),
           y = a.y - Math.cos(angle) * step;
@@ -346,15 +355,17 @@ export function growRoots(s, p) {
       dir: b.angle < 0 ? -1 : 1,
       age: (a.age || 0) + 1,
       radius: radiusB,
+      sinceFork: (a.sinceFork ?? a.age ?? 0) + 1,
     };
     next.push(tip);
     if (
-      tip.age > 4 &&
+      tip.sinceFork >= 7 &&
       random(key + 97) < 0.24 &&
       next.length + forks.length < 10
     ) {
       const turn =
         (random(key + 5) < 0.5 ? -1 : 1) * (0.5 + random(key + 31) * 0.45);
+      tip.sinceFork = 0;
       forks.push({
         ...tip,
         angle: clamp(b.angle + turn, -1.49, 1.49),
@@ -423,18 +434,31 @@ export function stepWorms(state) {
       source.n -= load;
       worm.cargo += load;
     }
-    const choices = [];
-    for (let dy = -1; dy <= 1; dy++)
-      for (let dx = -1; dx <= 1; dx++) {
-        const col = worm.col + dx, row = worm.row + dy;
-        if ((!dx && !dy) || col < 0 || col >= COLS || row < 0 || row >= wormRows) continue;
-        const cell = soil[row * COLS + col];
-        const noise = random(day * 13.7 + worm.id * 9.1 + row * 33 + col * 1.9);
-        const forage = worm.cargo === 0 ? (cell.n - source.n) * 0.05 : 0;
-        choices.push({ col, row, dx, dy, weight: noise + forage });
-      }
-    const next = choices.reduce((best, candidate) => candidate.weight > best.weight ? candidate : best);
-    Object.assign(worm, { col: next.col, row: next.row, dx: next.dx, dy: next.dy });
+    const key = day * 13.7 + worm.id * 9.1;
+    const atEdge = worm.col + worm.dx < 0 || worm.col + worm.dx >= COLS;
+    const chooseHeading = !worm.turnDay || day >= worm.turnDay || atEdge;
+    if (chooseHeading) {
+      let best = -Infinity;
+      for (const dx of [-1, 1])
+        for (const dy of [-1, 0, 1]) {
+          const col = worm.col + dx, row = worm.row + dy;
+          if (col < 0 || col >= COLS || row < 0 || row >= wormRows) continue;
+          const noise = random(key + row * 33 + col * 1.9);
+          const forage = worm.cargo === 0 ? (soil[row * COLS + col].n - source.n) * 0.05 : 0;
+          const weight = noise + forage - Math.abs(dy) * 0.25 + (dx === worm.dx ? 0.18 : 0);
+          if (weight <= best) continue;
+          best = weight;
+          worm.heading = dx;
+          worm.slope = dy;
+        }
+      worm.turnDay = day + 6 + Math.floor(random(key + 10) * 5);
+    }
+    const dy = (chooseHeading && worm.cargo === 0) || random(key + 20) < 0.34 ? worm.slope : 0;
+    const row = clamp(worm.row + dy, 0, wormRows - 1);
+    worm.dy = row - worm.row;
+    worm.dx = worm.heading;
+    worm.col += worm.dx;
+    worm.row = row;
     const target = soil[worm.row * COLS + worm.col];
     const deposit = Math.min(worm.cargo, 100 - target.n, 0.24);
     target.n += deposit;

@@ -84,8 +84,8 @@ test("weeds grow roots and mushrooms retain their own lifetimes", () => {
   assert.equal(s.mushrooms.length, 1);
 });
 test("neighbor shelter gives a growth bonus in suitable light", () => {
-  const a = freshState(),
-    b = freshState();
+  const a = freshState(42),
+    b = freshState(42);
   a.plants = [plant(1, "eurya")];
   b.plants = [plant(1, "eurya"), plant(2, "cinnamon")];
   for (const s of [a, b])

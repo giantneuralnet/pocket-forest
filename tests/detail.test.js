@@ -10,6 +10,8 @@ import {
   rootThickness,
   stepWorms,
   COLS,
+  ROWS,
+  CH,
   migrate,
   packState,
 } from "../dist/ecology.js";
@@ -125,7 +127,7 @@ test("soil preparation changes only the clicked area and compost stays near the 
 test("live roots draw moisture from the soil cells along their paths", async () => {
   const { stepDay, cellAt } = await import("../dist/ecology.js");
   const planted = freshState();
-  const dryControl = freshState();
+  const dryControl = structuredClone(planted);
   const root = { a: [-1.12, -1.6], b: [-0.95, -1.65], born: 0, radiusA: 0.06 };
   planted.plants.push({ id: "test-oak", sid: "oak", x: 0, age: 2, health: 100,
     biomass: 1.5, planted: true, roots: [root], tips: [{ x: 0, y: -0.1 }], nextRootDay: 50 });
@@ -169,4 +171,34 @@ test("worms seek a rich patch, then spread its nutrients without creating new on
   assert.deepEqual(restored.worms, state.worms);
   const transferred = restored.soil.reduce((sum, cell) => sum + cell.n, restored.worms[0].cargo);
   assert.ok(Math.abs(total - transferred) < 1e-8);
+});
+
+test("a fresh soil seed varies all rows, including the deep cutaway", () => {
+  const state = freshState(102);
+  const rowStep = state.soil.slice(1, COLS).reduce((sum, cell, i) => sum + Math.abs(cell.n - state.soil[i].n), 0) / (COLS - 1);
+  assert.ok(rowStep < 10);
+  for (let row = 0; row < ROWS; row++) {
+    const cells = state.soil.slice(row * COLS, (row + 1) * COLS);
+    assert.ok(new Set(cells.map(cell => Math.round(cell.n))).size > 10);
+  }
+  const deep = sampleSoil(state, 0, -(ROWS + 3.5) * CH);
+  assert.notEqual(deep.n, sampleSoil(state, 0, -(ROWS + 4.5) * CH).n);
+  assert.notEqual(deep.n, sampleSoil(freshState(103), 0, -(ROWS + 3.5) * CH).n);
+  assert.deepEqual(deep, sampleSoil(migrate(JSON.parse(packState(state))), 0, -(ROWS + 3.5) * CH));
+});
+
+test("a worm keeps its horizontal heading across successive soil cells", () => {
+  const state = freshState(20);
+  const worm = { id: 1, col: 24, row: 3, cargo: 1.8 };
+  state.worms.push(worm);
+  state.day = 17;
+  stepWorms(state);
+  const first = worm.col, direction = worm.dx;
+  for (let day = 18; day <= 22; day++) {
+    state.day = day;
+    stepWorms(state);
+    assert.equal(worm.dx, direction);
+  }
+  assert.equal(worm.col, first + direction * 5);
+  assert.ok(worm.cargo < 0.5);
 });

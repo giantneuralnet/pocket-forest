@@ -121,7 +121,8 @@ test("existing roots widen with the trunk without moving their centers", () => {
   assert.equal(rec.rootMesh, mesh);
   assert.deepEqual(new T.Vector3().setFromMatrixPosition(matrix), center);
   assert.ok(Math.abs(wider.x / original.x - 2) < 1e-6);
-  assert.ok(Math.abs(wider.y - original.y) < 1e-6);
+  assert.ok(original.y > Math.hypot(0.1, 0.2));
+  assert.ok(wider.y > original.y);
 });
 
 test("a falling leaf keeps its blade dimensions and deposits litter only on impact", async () => {
