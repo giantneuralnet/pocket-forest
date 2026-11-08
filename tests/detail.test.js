@@ -224,6 +224,7 @@ test("worms emerge in both woods and travel gradually into the planting bed", ()
 test("infiltrating water cannot move nutrients to neighboring cells", async () => {
   const { hydrology, stepDay, addWater, colAt, prepareSoilAt } = await import("../dist/ecology.js");
   const state = freshState(42);
+  state.phase = 4;
   const center = colAt(0);
   for (const cell of state.soil) { cell.m = 45; cell.n = 20; }
   prepareSoilAt(state, 0, "compost");
@@ -236,4 +237,18 @@ test("infiltrating water cannot move nutrients to neighboring cells", async () =
   assert.ok(state.soil[center + COLS].m > 45);
   assert.equal(state.soil[center + COLS].n, 20);
   assert.equal(state.soil[center + 1].n, 20);
+});
+
+test("digging deep alters only the selected tile and its neighbors", async () => {
+  const { prepareSoilAt, colAt } = await import("../dist/ecology.js");
+  const state = freshState(42), before = structuredClone(state);
+  const x = HALF + CW * 3, row = 5, col = colAt(x);
+  prepareSoilAt(state, x, "drainage", -(row + 0.5) * CH);
+  const index = row * COLS + col;
+  assert.equal(state.soil[index].m, before.soil[index].m - 16);
+  assert.ok(state.soil[index].d > before.soil[index].d);
+  assert.ok(state.soil[index + 1].m < before.soil[index + 1].m);
+  assert.deepEqual(state.soil[index + 2], before.soil[index + 2]);
+  assert.deepEqual(state.soil[col], before.soil[col]);
+  assert.deepEqual(state.surface, before.surface);
 });

@@ -24,7 +24,7 @@ import {
   WORM_LIMIT,
   WORM_STEP_DAYS,
   rootThickness,
-} from "./ecology.js?v=18";
+} from "./ecology.js?v=19-2";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
@@ -1499,7 +1499,8 @@ export class ForestView {
     box(this.shovel, 0, 1.05, 0, 0.28, 0.10, 0.1, 0x7d5537);
     box(this.shovel, 0, 0.02, 0, 0.34, 0.35, 0.075, 0xa3b5ba);
     this.shovel.position.y = -0.47;
-    box(this.bag, 0, 0, 0, 0.52, 0.66, 0.28, 0xcfab67);
+    box(this.bag, 0, 0, 0, 0.65, 0.8, 0.34, 0xcfab67);
+    box(this.bag, 0, 0.399, 0, 0.59, 0.023, 0.30, 0x80663d);
     this.bagLabels = {};
     for (const name of ["compost", "mulch"]) {
       const label = document.createElement("canvas");
@@ -1513,9 +1514,9 @@ export class ForestView {
       context.fillText(name.toUpperCase(), 64, 24);
       const map = new T.CanvasTexture(label);
       map.colorSpace = T.SRGBColorSpace;
-      const mesh = new T.Mesh(new T.PlaneGeometry(0.49, 0.184),
+      const mesh = new T.Mesh(new T.PlaneGeometry(0.59, 0.22),
         new T.MeshBasicMaterial({ map, alphaTest: 0.5 }));
-      mesh.position.z = 0.142;
+      mesh.position.z = 0.172;
       this.bag.add(mesh);
       this.bagLabels[name] = mesh;
     }
@@ -1532,39 +1533,41 @@ export class ForestView {
     this.canOutlet.position.set(0.435, 0.092, 0);
     this.canOutlet.rotation.z = spout.rotation.z;
     this.can.add(this.canOutlet);
-    this.bagOutlet = new T.Object3D();
-    this.bagOutlet.position.set(0.26, 0.08, 0);
-    this.bag.add(this.bagOutlet);
   }
   positionTool(tool, pointer, applying) {
     const p = this.worldPoint(pointer.x, pointer.y);
     this.toolRoot.position.set(p.x, p.y);
     this.toolRoot.rotation.z = tool === "drainage" ? (applying ? -0.65 : -0.28)
       : applying ? -0.74 : 0;
-    this.toolRoot.rotation.y = tool !== "drainage" && p.x > HALF - 1.5 ? Math.PI : 0;
+    this.toolRoot.rotation.y = tool !== "drainage" && p.x < 0 ? Math.PI : 0;
     this.toolRoot.rotation.order = "YXZ";
+    const shaking = applying && (tool === "compost" || tool === "mulch");
+    const shake = shaking ? Math.sin(this.time * 44) : 0;
+    this.bag.position.set(shake * 0.034, Math.abs(shake) * 0.045, 0);
+    this.bag.rotation.z = shake * 0.13;
     for (const label of Object.values(this.bagLabels)) {
-      label.position.z = this.toolRoot.rotation.y ? -0.142 : 0.142;
+      label.position.z = this.toolRoot.rotation.y ? -0.172 : 0.172;
       label.rotation.y = this.toolRoot.rotation.y;
     }
   }
   pour(tool, pointer) {
     this.positionTool(tool, pointer, true);
     const water = tool === "water";
-    const outlet = water ? this.canOutlet : this.bagOutlet;
-    const origin = outlet.getWorldPosition(new T.Vector3());
+    const outlet = water ? this.canOutlet : this.bag;
     const direction = new T.Vector3(1, 0, 0)
       .applyQuaternion(outlet.getWorldQuaternion(new T.Quaternion()));
     const mulch = tool === "mulch";
-    const count = water ? 6 : mulch ? 1 : 7;
+    const count = water ? 6 : 7;
     const color = water ? 0x197ddd : mulch ? 0xc79a56 : 0x463120;
     for (let i = 0; i < count; i++) {
-      const fraction = mulch ? 0.2 : i / (count - 1);
-      const size = (water ? 0.067 : mulch ? 0.16 : 0.10) * (0.8 + Math.random() * 0.4);
+      const fraction = i / (count - 1);
+      const origin = water ? outlet.getWorldPosition(new T.Vector3()) :
+        outlet.localToWorld(new T.Vector3((fraction - 0.5) * 0.56, 0.412, (Math.random() - 0.5) * 0.17));
+      const size = (water ? 0.067 : mulch ? 0.125 : 0.10) * (0.8 + Math.random() * 0.4);
       const mesh = box(this.scene, origin.x, origin.y, origin.z, size, size, size, color);
       this.effects.push({
         mesh, kind: tool, life: 3,
-        vx: direction.x * (0.42 + fraction * (water || mulch ? 3.9 : 6.7) + Math.random() * 0.27),
+        vx: direction.x * (0.42 + fraction * (water ? 3.9 : 6.7) + Math.random() * 0.27),
         vy: direction.y * (0.65 + Math.random() * 0.8) + fraction * 0.24,
       });
     }
@@ -1729,10 +1732,10 @@ export class ForestView {
   digParticles(x, y, count) {
     for (let i = 0; i < count; i++) {
       const jitter = random(this.time + i) - 0.5;
-      const width = 0.15 + random(i + 5) * 0.12;
-      const mesh = box(this.scene, x + jitter * 0.15, y + random(i) * 0.13,
+      const width = CW * (0.22 + random(i + 5) * 0.06);
+      const mesh = box(this.scene, x + jitter * 0.15, y + random(i) * 0.08,
         0, width, width * 0.74, width * 0.55, 0x786049);
-      this.effects.push({ mesh, vx: jitter * 2, vy: 3.4 + random(i) * 1.2, kind: "dig", life: 3 });
+      this.effects.push({ mesh, vx: jitter * 2, vy: 1.3 + random(i) * 0.6, kind: "dig", life: 3, floorY: y - 0.09 });
     }
   }
   releaseLeaf(rec, release, time) {
@@ -1901,10 +1904,10 @@ export class ForestView {
       e.mesh.position.y += e.vy * dt;
       if (e.kind === "weed") e.mesh.rotation.z += dt * 2;
       else e.mesh.rotation.z += dt;
-      if (e.mesh.position.y <= 0.04) {
+      if (e.mesh.position.y <= (e.floorY ?? 0.04)) {
         if (e.kind === "water" && Math.abs(e.mesh.position.x) < MAP_HALF)
           this.pendingWater.push(e.mesh.position.x);
-        if (e.kind === "mulch" && Math.abs(e.mesh.position.x) < HALF)
+        if (e.kind === "mulch" && Math.abs(e.mesh.position.x) < MAP_HALF)
           this.pendingMulch.push(e.mesh.position.x);
         if (e.kind === "compost" && Math.abs(e.mesh.position.x) < MAP_HALF)
           this.pendingCompost.push(e.mesh.position.x);

@@ -30,9 +30,9 @@ function plant(i, sid = "oak") {
   };
 }
 test("a pour pools first and wets the top before deep soil", () => {
-  const s = freshState(),
-    control = structuredClone(s),
-    top = s.soil[colAt(0)].m;
+  const s = freshState();
+  s.phase = 4;
+  const control = structuredClone(s), top = s.soil[colAt(0)].m;
   addWater(s, 0, 20);
   assert.equal(s.soil[colAt(0)].m, top);
   assert.equal(s.surface[colAt(0)], 20);
@@ -113,6 +113,7 @@ test("saves from before the map grid start a fresh forest", () => {
 
 test("water flows across the plot fence and infiltrates woodland soil", () => {
   const state = freshState(42);
+  state.phase = 4;
   const outside = colAt(HALF + CW / 2);
   state.soil[outside - 1].m = state.soil[outside].m = 40;
   addWater(state, HALF - CW / 2, 40);
@@ -161,4 +162,21 @@ test("a dead plant keeps its cause of death after reload and improved soil", () 
   stepDay(saved);
   assert.equal(saved.plants[0].health, 0);
   assert.equal(saved.plants[0].deathReason, oak.deathReason);
+});
+
+test("water waits on the surface until tending is running", () => {
+  const state = freshState(42);
+  const col = colAt(0), before = state.soil[col].m;
+  addWater(state, 0, 25);
+  state.phase = 3;
+  hydrology(state, 1);
+  state.phase = 4;
+  state.speed = 0;
+  hydrology(state, 1);
+  assert.equal(state.surface[col], 25);
+  assert.equal(state.soil[col].m, before);
+  state.speed = 1;
+  hydrology(state, 0.1);
+  assert.ok(state.surface[col] < 25);
+  assert.ok(state.soil[col].m > before);
 });

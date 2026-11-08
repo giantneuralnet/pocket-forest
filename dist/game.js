@@ -4,6 +4,8 @@ import {
   returnWeedToSoil,
   prepareSoilAt,
   HALF,
+  MAP_HALF,
+  DEPTH,
   PLOT_FIRST,
   PLOT_END,
   COLS,
@@ -21,8 +23,8 @@ import {
   TIME_RATES,
   packState,
   score,
-} from "./ecology.js?v=18";
-import { ForestView } from "./forest-view.js?v=19";
+} from "./ecology.js?v=19-2";
+import { ForestView } from "./forest-view.js?v=19-3";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -406,16 +408,26 @@ function confirmPlant() {
     p.paid = true;
   }
   p.planted = true;
-  selectedSpecies = sp.id;
   p.drop = 0;
-  selected = null;
-  view.selected = null;
-  highlight(null);
-  view.sync();
-  updateUI();
+  const direction = p.x > 0 ? -1 : 1;
+  const nextX = Array.from({ length: 20 }, (_, i) => p.x + (i + 1) * 0.6 * direction)
+    .find(x => Math.abs(x) <= HALF - 0.3 &&
+      !state.plants.some(other => other.planted && Math.abs(other.x - x) < 0.22));
+  if (nextX != null && state.budget >= sp.price) {
+    startSeedling(nextX);
+  } else {
+    selected = null;
+    selectedSpecies = null;
+    view.selected = null;
+    view.target = nextX ?? p.x;
+    highlight(null);
+    view.sync();
+    updateUI();
+    save();
+  }
   toast(`${sp.name} planted successfully.`);
-  save();
 }
+
 function action(text, fn, cls = "") {
   const b = document.createElement("button");
   b.textContent = text;
@@ -447,8 +459,7 @@ function updateUI() {
     action("Seedling shop", shop, "shop-button");
     n.title = "Next · Mulch & water";
     n.disabled =
-      state.plants.filter((p) => p.planted).length < 2 ||
-      state.plants.some((p) => !p.planted);
+      state.plants.filter(p => p.planted).length < 2;
   }
   if (p === 3) {
     action("Mulch · ¥15", () => setTool("mulch"), tool === "mulch" ? "active-tool" : "");
@@ -531,6 +542,8 @@ for (const rate of TIME_RATES) {
 
 function enterPhase(phase) {
   const firstVisit = phase > (state.reachedPhase ?? state.phase);
+  if (state.phase === 2 && phase !== 2 && selected?.paid === false)
+    state.plants = state.plants.filter(plant => plant !== selected);
   state.phase = phase;
   state.reachedPhase = Math.max(phase, state.reachedPhase ?? phase);
   selected = phase === 2 ? state.plants.find(p => !p.planted) ?? null : null;
@@ -579,8 +592,9 @@ function setTool(t) {
 function applyAt(point) {
   const { x, y } = point;
   const now = performance.now();
-  if (Math.abs(x) > HALF || now < nextToolAt) return;
-  if (tool === "drainage" && (y > 0.62 || y < -0.35 || view.cameraMove)) return;
+  const digging = tool === "drainage";
+  if (Math.abs(x) > (digging ? MAP_HALF : HALF) || now < nextToolAt) return;
+  if (digging && (y > 0.12 || y <= -DEPTH || view.cameraMove)) return;
   if (tool === "drainage" && !state.prep[0]) {
     if (state.budget < 400) { toast("Drainage costs ¥400."); return; }
     state.budget -= 400;
@@ -603,8 +617,8 @@ function applyAt(point) {
   nextToolAt = now + (tool === "mulch" ? 320 : tool === "compost" ? 140 : 105);
   toolActionUntil = now + 210;
   if (tool === "drainage") {
-    prepareSoilAt(state, x, tool);
-    view.digParticles(x, 0.13, 6);
+    prepareSoilAt(state, x, tool, y);
+    view.digParticles(x, Math.min(0, y), 6);
     view.updateSoil();
     const sample = view.inspectSoil(pointer.x, pointer.y);
     if (sample) showSoilTooltip(sample, pointer.x, pointer.y);
@@ -748,7 +762,7 @@ world.addEventListener("pointerdown", (e) => {
     view.updateGhosts();
     updateSelection();
   }
-  if (tool && Math.abs(point.x) <= HALF) {
+  if (tool && (tool === "drainage" || Math.abs(point.x) <= HALF)) {
     applying = true;
     applyAt(point);
   }
@@ -970,12 +984,15 @@ function frame(ms) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.06, (ms - lastTime) / 1000 || 0.016);
   lastTime = ms;
-  waterTime += dt;
-  const waterInterval = Math.min(0.075, 0.6 / Math.max(1, state.speed));
-  if (waterTime >= waterInterval) {
-    hydrology(state, waterTime);
-    waterTime = 0;
-  }
+  const tending = state.phase === 6 || (state.phase === 4 && !state.review);
+  if (tending && state.speed > 0) {
+    waterTime += dt;
+    const waterInterval = Math.min(0.075, 0.6 / state.speed);
+    if (waterTime >= waterInterval) {
+      hydrology(state, waterTime);
+      waterTime = 0;
+    }
+  } else waterTime = 0;
   if (applying && tool && tool !== "drainage" && ms >= nextToolAt) {
     applyAt(view.worldPoint(pointer.x, pointer.y));
   }
@@ -986,14 +1003,14 @@ function frame(ms) {
       c <= Math.min(COLS - 1, colAt(x) + 1);
       c++
     )
-      state.soil[c].mulch = clamp(state.soil[c].mulch + 0.24);
+      state.soil[c].mulch = clamp(state.soil[c].mulch + 0.24 / 7);
   }
   for (const x of view.pendingCompost.splice(0)) {
     const first = state.phase === 1 && !state.prep[2];
     prepareSoilAt(state, x, "compost");
     if (first) updateUI();
   }
-  if (state.phase === 6 || (state.phase === 4 && !state.review)) {
+  if (tending) {
     simAccumulator += dt * state.speed;
     let steps = 0;
     while (simAccumulator >= 1 && steps++ < 2) {

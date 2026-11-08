@@ -168,8 +168,8 @@ export function addWater(s, x, amount = 10) {
 // A pour ponds first, then infiltrates over roughly one to two simulated days.
 const waterBuffers = new WeakMap();
 export function hydrology(s, dt) {
-  const factor = [4, 6].includes(s.phase) ? s.speed : 1;
-  if (!factor) return;
+  if (!((s.phase === 4 && !s.review) || s.phase === 6) || !s.speed) return;
+  const factor = s.speed;
   const diffusion = Math.min(dt * factor, 0.8);
   for (let c = 0; c < COLS; c++) {
     const top = s.soil[c],
@@ -296,7 +296,7 @@ export function growRoots(s, p) {
   }
   p.tips = [...next, ...forks].slice(0, 10);
 }
-export function prepareSoilAt(s, x, tool) {
+export function prepareSoilAt(s, x, tool, y = 0) {
   const center = colAt(x);
   if (tool === "compost") {
     const cell = s.soil[center];
@@ -306,16 +306,18 @@ export function prepareSoilAt(s, x, tool) {
     if (s.phase === 1) s.prep[1] = s.prep[2] = true;
     return;
   }
-  for (let c = Math.max(0, center - 3); c <= Math.min(COLS - 1, center + 3); c++) {
-    const spread = 1 - Math.abs(c - center) / 5;
-    s.surface[c] = Math.max(0, s.surface[c] - 10 * spread);
-    for (let row = 0; row < 5; row++) {
-      const cell = s.soil[row * COLS + c];
-      const dose = spread * (1 - row / 5);
+  const targetRow = clamp(Math.floor(-y / CH), 0, ROWS - 1);
+  for (let row = Math.max(0, targetRow - 1); row <= Math.min(ROWS - 1, targetRow + 1); row++) {
+    for (let col = Math.max(0, center - 1); col <= Math.min(COLS - 1, center + 1); col++) {
+      const distance = Math.abs(col - center) + Math.abs(row - targetRow);
+      const dose = 0.34 ** distance;
+      const cell = s.soil[row * COLS + col];
       cell.d = Math.min(1, cell.d + 0.42 * dose);
       cell.m = Math.max(0, cell.m - 16 * dose);
+      if (row === 0) s.surface[col] = Math.max(0, s.surface[col] - 10 * dose);
     }
   }
+
 }
 
 export function returnLeafToSoil(state, x, area) {
