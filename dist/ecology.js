@@ -451,29 +451,29 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
       (q) => q !== p && q.planted && q.health > 0 && Math.abs(q.x - p.x) < 1.8,
     ).length;
     const sheltered = clamp(neighbors * 0.09, 0, 0.28);
-    const moisture = clamp(1 - Math.max(0, Math.abs(m - sp.water) - 19) / 42),
-      nutrients = clamp(n / 45);
-    const light =
-      e.light > 0.88
-        ? 1
-        : e.light < 0.2
-          ? 0.28 + sp.shade * 0.45
-          : 0.88 + sp.shade * 0.3;
-    const fitness = moisture * nutrients * light;
-    p.health = clamp(
-      (p.health ?? 95) + (fitness > 0.48 ? 0.1 : -(0.48 - fitness) * 0.55),
-      0,
-      100,
-    );
-    if (fitness < 0.48) {
-      const deficit = 0.48 - fitness;
+    const moisture = m < sp.water
+      ? clamp(m / (sp.water - 10))
+      : clamp(1 - (m - sp.water - 10) / 32);
+    const nutrients = clamp(n / 60);
+    const light = clamp(e.light / (0.65 - sp.shade * 0.35));
+    // The root zone sets sustainable health. Shade has a larger effect on growth.
+    const soilFitness = moisture ** 0.6 * nutrients ** 0.4;
+    const targetHealth = 100 * soilFitness * (0.9 + 0.1 * light);
+    const previousHealth = p.health ?? 95;
+    const change = targetHealth - previousHealth;
+    const nextHealth = previousHealth + clamp(change * 0.055, -2.5, 1.5);
+    p.health = Math.abs(targetHealth - nextHealth) < 0.1
+      ? targetHealth
+      : nextHealth;
+    if (change < 0) {
+      const loss = previousHealth - p.health;
       const stress = p.stressHistory ??= [0, 0, 0, 0];
-      stress[m < sp.water ? 0 : 1] += (1 - moisture) * deficit;
-      stress[2] += (1 - nutrients) * deficit;
-      stress[3] += Math.max(0, 1 - light) * deficit;
+      stress[m < sp.water ? 0 : 1] += 0.6 * (1 - moisture) * loss;
+      stress[2] += 0.4 * (1 - nutrients) * loss;
+      stress[3] += 0.1 * (1 - light) * loss;
     } else if (p.stressHistory) {
       if (p.health >= 95) delete p.stressHistory;
-      else if (fitness > 0.48)
+      else if (change > 0)
         p.stressHistory = p.stressHistory.map(value => value * 0.997);
     }
     if (p.health === 0) {
@@ -494,7 +494,8 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     }
     p.biomass = clamp(
       (p.biomass || 0) +
-        (sp.height / 2100) * fitness * (1 + sheltered) * (p.health / 100),
+        (sp.height / 2100) * soilFitness * (0.35 + 0.65 * light) *
+          (1 + sheltered) * (p.health / 100),
       0,
       sp.height - 0.38,
     );

@@ -101,6 +101,43 @@ test("neighbor shelter gives a growth bonus in suitable light", () => {
   stepDay(b, () => ({ light: 0.6, rain: 1 }));
   assert.ok(b.plants[0].biomass > a.plants[0].biomass);
 });
+test("the wetter, better-fed Yabunikkei becomes healthier even in deeper shade", () => {
+  const s = freshState(42);
+  const brighter = { ...plant(1, "cinnamon"), x: -4, health: 98, age: 2.8, biomass: 3.62 };
+  const tended = { ...plant(2, "cinnamon"), x: 4, health: 94, age: 2.8, biomass: 3.12 };
+  s.plants = [brighter, tended];
+  for (let day = 0; day < 30; day++) {
+    s.soil.forEach((cell, i) => {
+      const right = i % COLS >= COLS / 2;
+      cell.m = right ? 26 : 19;
+      cell.n = right ? 47 : 37;
+    });
+    stepDay(s, x => ({ light: x < 0 ? 0.34 : 0.08, rain: 1 }));
+  }
+  assert.ok(tended.health > brighter.health + 5);
+});
+test("water and nutrients independently improve health, with gradual recovery", () => {
+  const conditions = [
+    { m: 54, n: 65, light: 0.08 },
+    { m: 18, n: 65, light: 1 },
+    { m: 54, n: 18, light: 1 },
+    { m: 99, n: 65, light: 1 },
+  ];
+  const results = conditions.map(({ m, n, light }) => {
+    const s = freshState(42);
+    const tree = { ...plant(1, "cinnamon"), health: 60 };
+    s.plants = [tree];
+    for (let day = 0; day < 45; day++) {
+      s.soil.forEach(cell => Object.assign(cell, { m, n }));
+      stepDay(s, () => ({ light, rain: 1 }));
+      if (day === 0) assert.ok(Math.abs(tree.health - 60) <= 2.5);
+    }
+    return tree.health;
+  });
+  const [wellTended, ...stressed] = results;
+  assert.ok(wellTended > 85);
+  for (const health of stressed) assert.ok(wellTended > health + 15);
+});
 test("saves from before the map grid start a fresh forest", () => {
   const current = freshState();
   const legacy = { ...current, version: current.version - 1, phase: 5, budget: 3400, plants: [plant(1)] };
