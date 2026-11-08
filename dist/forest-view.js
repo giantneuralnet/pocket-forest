@@ -20,7 +20,7 @@ import {
   plantHeight,
   colAt,
   sampleSoil,
-  soilColorHSL,
+  soilColorRGB,
   WORM_LIMIT,
   rootThickness,
 } from "./ecology.js";
@@ -136,6 +136,9 @@ function barkMaterial(sp) {
   const bark = new T.MeshLambertMaterial({ map });
   barkMaterials.set(sp.id, bark);
   return bark;
+}
+function foliageColor(sp) {
+  return new T.Color(sp.color).lerp(new T.Color(0x429a37), 0.32).offsetHSL(0, 0.08, 0.055);
 }
 function box(g, x, y, z, w, h, d, color) {
   const m = new T.Mesh(boxGeometry, material(color));
@@ -281,16 +284,15 @@ export class ForestView {
     this.rainHits = new Map();
     this.ground = new T.Group();
     this.scene.add(this.ground);
-    this.baseSoilColor = new T.Color().setHSL(0.069, 0.49, 0.061);
     // The soil volume extends behind the cutaway, keeping the face and roots at z = 0.
     const soilDepth = 0.85;
-    const cutawayMaterial = new T.MeshBasicMaterial({ color: this.baseSoilColor, depthWrite: false });
-    const surfaceMaterial = new T.MeshBasicMaterial({
-      color: this.baseSoilColor.clone().offsetHSL(0, 0.02, 0.035),
+    const cutawayMaterial = new T.MeshBasicMaterial({
+      color: new T.Color().setRGB(...soilColorRGB({ m: 75, n: 65 }), T.SRGBColorSpace),
       depthWrite: false,
     });
+    this.surfaceMaterial = new T.MeshBasicMaterial({ depthWrite: false });
     const soilBase = new T.Mesh(new T.BoxGeometry(MAP_HALF * 2, DEPTH, soilDepth),
-      [cutawayMaterial, cutawayMaterial, surfaceMaterial, cutawayMaterial, cutawayMaterial, cutawayMaterial]);
+      [cutawayMaterial, cutawayMaterial, this.surfaceMaterial, cutawayMaterial, cutawayMaterial, cutawayMaterial]);
     soilBase.position.set(0, -DEPTH / 2, -soilDepth / 2);
     soilBase.renderOrder = -2;
     this.ground.add(soilBase);
@@ -533,8 +535,7 @@ export class ForestView {
     this.soilMesh.instanceColor.needsUpdate = true;
   }
   paintSoilTile(index, color) {
-    const { h, s, l } = soilColorHSL(this.state.soil[index]);
-    color.setHSL(h, s, l);
+    color.setRGB(...soilColorRGB(this.state.soil[index]), T.SRGBColorSpace);
     if (index === this.highlightedSoil) color.offsetHSL(0, 0, 0.065);
     this.soilMesh.setColorAt(index, color);
   }
@@ -646,9 +647,7 @@ export class ForestView {
       }
       rec.poseSignature = signature;
     }
-    let color = new T.Color(sp.color)
-      .lerp(new T.Color(0x429a37), 0.32)
-      .offsetHSL(0, 0.08, 0.055);
+    const color = foliageColor(sp);
     if (health < 65) color.lerp(new T.Color(0xb8a454), (65 - health) / 65);
     if (sp.deciduous && Math.floor((this.state.day % 365) / 91.25) === 2)
       color.lerp(new T.Color(0xb77c35), 0.7);
@@ -1007,11 +1006,15 @@ export class ForestView {
     this.soilMesh.instanceColor.needsUpdate = true;
     color.setRGB(0, 0, 0);
     const tileColor = new T.Color();
+    this.surfaceMaterial.color.setRGB(0, 0, 0);
     for (let c = 0; c < COLS; c++) {
+      this.soilMesh.getColorAt(c, tileColor);
+      this.surfaceMaterial.color.add(tileColor);
       this.soilMesh.getColorAt((ROWS - 1) * COLS + c, tileColor);
       color.add(tileColor);
     }
     this.bedrockMaterial.color.copy(color.multiplyScalar(1 / COLS));
+    this.surfaceMaterial.color.multiplyScalar(1 / COLS);
     for (let c = 0; c < COLS; c++) {
       const x = soilX(c),
         top = this.state.soil[c],
@@ -1140,7 +1143,7 @@ export class ForestView {
     woodMaterial.depthWrite = opacity === 1;
     const leafMaterial = new T.MeshLambertMaterial({
       map: stamp(sp).texture,
-      color: new T.Color(sp.color).lerp(new T.Color(0x429a37), 0.32).offsetHSL(0, 0.08, 0.055),
+      color: foliageColor(sp),
       side: T.DoubleSide,
       alphaTest: 0.16,
       transparent: opacity < 1,
@@ -1324,29 +1327,24 @@ export class ForestView {
     this.farmer.position.z = 0;
     this.farmerX = 0;
     this.target = 0;
-    box(this.farmer, 0, 1.02, 0, 0.44, 0.6, 0.28, 0x618052);
+    const shirt = foliageColor(getSpecies("cinnamon")).getHex();
+    const pants = foliageColor(getSpecies("oak")).getHex();
+    box(this.farmer, 0, 1.02, 0, 0.44, 0.6, 0.28, shirt);
     const head = new T.Group();
     head.position.y = 1.515;
     this.farmer.add(head);
     box(head, 0, 0, 0, 0.4, 0.4, 0.4, 0xd3ae86);
-    for (const side of [-1, 1]) {
-      for (const [y, z, width, height, color] of [
-        [0.012, 0.201, 0.086, 0.061, 0xfffbef],
-        [0.021, 0.215, 0.038, 0.038, 0x241e1a],
-      ]) {
-        const eye = new T.Mesh(fruitGeometry, material(color));
-        eye.position.set(side * 0.088, y, z);
-        eye.scale.set(width, height, 0.026);
-        head.add(eye);
-      }
-    }
+    const faceTexture = new T.TextureLoader().load(
+      window.POCKET_FOREST_FACE ?? "art/farmer-face.png",
+      () => this.thumbnails?.clear(),
+    );
+    faceTexture.colorSpace = T.SRGBColorSpace;
+    const face = new T.Mesh(new T.PlaneGeometry(0.4, 0.4),
+      new T.MeshBasicMaterial({ map: faceTexture, alphaTest: 0.3 }));
+    face.position.z = 0.201;
+    head.add(face);
     box(head, 0, 0.146, 0, 0.424, 0.142, 0.424, 0x514034);
     box(head, 0, 0.24, 0, 0.73, 0.09, 0.63, 0xd5ba76);
-    box(head, 0, -0.129, 0.207, 0.12, 0.025, 0.016, 0x654234);
-    for (const side of [-1, 1]) {
-      const corner = box(head, side * 0.062, -0.113, 0.207, 0.044, 0.023, 0.016, 0x654234);
-      corner.rotation.z = side * 0.65;
-    }
     box(head, 0, 0.33, 0, 0.37, 0.12, 0.35, 0xbda16c);
     this.legs = [];
     this.arms = [];
@@ -1354,7 +1352,7 @@ export class ForestView {
       const leg = new T.Group();
       leg.position.set(side * 0.11, 0.72, 0);
       this.farmer.add(leg);
-      box(leg, 0, -0.3, 0, 0.22, 0.6, 0.25, 0x40594b);
+      box(leg, 0, -0.3, 0, 0.22, 0.6, 0.25, pants);
       box(leg, 0, -0.665, 0.04, 0.24, 0.11, 0.33, 0x554c38);
       this.legs.push(leg);
       const arm = new T.Group();

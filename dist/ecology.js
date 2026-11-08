@@ -1,9 +1,9 @@
 import { species } from "./species.js";
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
 export const HALF = 20 / 3,
   PLOT_COLS = 40,
   COLS = 134,
-  ROWS = 15,
+  ROWS = 21,
   CW = (HALF * 2) / PLOT_COLS,
   CH = CW,
   DEPTH = ROWS * CH,
@@ -48,7 +48,7 @@ export function soilBaseline(x, y, seed = 0) {
     perlin(a * 0.8, b * 0.8, salt) + 0.28 * perlin(a * 1.9, b * 1.9, salt + 500);
   const depth = clamp(cy / DEPTH);
   return {
-    m: clamp(38 + 38 * depth + 30 * patch(cx + 0.21, cy, seed), 18, 94),
+    m: clamp(38 + 57 * depth + 24 * patch(cx + 0.21, cy, seed), 18, 98),
     n: clamp(31 + 44 * depth + 43 * patch(cx, cy + 0.37, seed + 1501), 10, 95),
     d: 0.48 - 0.34 * depth,
     o: 0,
@@ -62,13 +62,17 @@ export function sampleSoil(state, x, y = 0) {
   const row = clamp(Math.floor(-y / CH), 0, ROWS - 1);
   return state.soil[row * COLS + colAt(x)];
 }
-export function soilColorHSL(cell) {
-  const nutrients = clamp(cell.n / 100);
-  return {
-    h: 0.074,
-    s: 0.24 + nutrients * 0.36,
-    l: 0.15 - nutrients * 0.09 - clamp(cell.m / 100) * 0.035,
-  };
+const healthySoil = [73, 38, 19];
+const drySoil = [173, 95, 47];
+const depletedSoil = [90, 71, 59];
+export function soilColorRGB(cell) {
+  const moisture = clamp((cell.m - 18) / 57);
+  const fertility = clamp(cell.n / 65);
+  return healthySoil.map((healthy, channel) => {
+    const dry = drySoil[channel];
+    const nourished = dry + (healthy - dry) * moisture;
+    return (depletedSoil[channel] + (nourished - depletedSoil[channel]) * fertility) / 255;
+  });
 }
 export function rootThickness(segment) {
   const depth = Math.hypot(

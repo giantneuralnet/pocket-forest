@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   freshState,
-  soilColorHSL,
+  soilColorRGB,
   sampleSoil,
   growRoots,
   HALF,
@@ -20,14 +20,13 @@ import {
 } from "../dist/ecology.js";
 import { makeArchitecture } from "../dist/architecture.js";
 import { getSpecies } from "../dist/ecology.js";
-test("nutrients darken soil and increase saturation while moisture also darkens it", () => {
-  const poor = soilColorHSL({ m: 40, n: 10 }),
-    rich = soilColorHSL({ m: 40, n: 90 }),
-    wet = soilColorHSL({ m: 90, n: 10 });
-  assert.ok(rich.s > poor.s);
-  assert.ok(poor.l - rich.l > 0.05);
-  assert.ok(wet.l < poor.l);
-  assert.equal(wet.s, poor.s);
+test("soil colors match all three reference swatches and blend between them", () => {
+  const color = (m, n) => soilColorRGB({ m, n }).map(channel => Math.round(channel * 255));
+  assert.deepEqual(color(75, 65), [73, 38, 19]);
+  assert.deepEqual(color(18, 65), [173, 95, 47]);
+  assert.deepEqual(color(75, 0), [90, 71, 59]);
+  assert.deepEqual(color(18, 0), [90, 71, 59]);
+  assert.deepEqual(color(46.5, 65), [123, 67, 33]);
 });
 test("roots can cross the plot border into persistent external soil", () => {
   const s = freshState();
@@ -171,7 +170,7 @@ test("one seeded square grid gets wetter and richer with depth across the map", 
   const average = (row, key) => state.soil.slice(row * COLS, (row + 1) * COLS)
     .reduce((sum, cell) => sum + cell[key], 0) / COLS;
   assert.ok(average(ROWS - 1, "n") > average(0, "n") + 30);
-  assert.ok(average(ROWS - 1, "m") > average(0, "m") + 26);
+  assert.ok(average(ROWS - 1, "m") > average(0, "m") + 44);
   assert.ok(average(0, "d") > average(ROWS - 1, "d"));
   const deep = sampleSoil(state, MAP_HALF - CW / 2, -DEPTH + CH / 2);
   assert.equal(deep, state.soil.at(-1));
