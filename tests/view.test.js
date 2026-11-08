@@ -37,6 +37,47 @@ test("two-axis panning moves the view horizontally and vertically", () => {
   assert.ok(v.center.x < 0);
   assert.ok(v.center.y > 6);
 });
+test("the dog returns to visible ground without changing the camera", () => {
+  const v = cameraView();
+  v.zoom = 5;
+  v.center = { x: 10, y: 1 };
+  v.projection();
+  v.farmerX = 0;
+  v.target = 0;
+  v.keepDogInView();
+  assert.equal(v.target, 10);
+  v.target = 11;
+  v.keepDogInView();
+  assert.equal(v.target, 11);
+  v.center.y = 20;
+  v.projection();
+  v.target = 0;
+  v.keepDogInView();
+  assert.equal(v.target, 0);
+  assert.equal(v.center.y, 20);
+});
+test("the seated dog's haunches meet the ground and its face points at the camera", () => {
+  const v = cameraView();
+  v.farmer = new T.Group();
+  v.farmer.position.x = -3;
+  v.dogBody = new T.Group();
+  v.dogHead = new T.Group();
+  v.dogHead.position.set(0, 0.93, 0.31);
+  v.farmer.add(v.dogBody);
+  v.dogBody.add(v.dogHead);
+  v.dogSit = 1;
+  v.dogSitAt = 0;
+  v.dogNextTilt = Infinity;
+  v.dogTiltAt = -Infinity;
+  v.legs = [];
+  v.tail = new T.Group();
+  v.animateDog(1, 10, false, 0);
+  const rear = v.dogBody.localToWorld(new T.Vector3(0, 0.45, -0.64));
+  assert.ok(Math.abs(rear.y) < 1e-9);
+  const towardCamera = v.camera.position.clone()
+    .sub(v.dogHead.getWorldPosition(new T.Vector3())).normalize();
+  assert.ok(v.dogHead.getWorldDirection(new T.Vector3()).dot(towardCamera) > 0.99999);
+});
 test("rain and sun raycasts detect an overstory canopy", () => {
   const v = cameraView();
   v.samples = new Map();

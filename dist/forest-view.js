@@ -34,6 +34,7 @@ const boxGeometry = new T.BoxGeometry(1, 1, 1),
   leafStamps = new Map();
 const lowerSoilHeight = 50, lowerSoilWidth = MAP_HALF * 2 + 3;
 const dogLegHeight = 0.51, dogRearZ = -0.53;
+const dogTorsoY = 0.63, dogTorsoZ = -0.17, dogTorsoHeight = 0.36, dogTorsoDepth = 0.94;
 const flowerGeometry = new T.PlaneGeometry(1, 1);
 const fruitGeometry = new T.SphereGeometry(0.5, 10, 8);
 const flowersBySpecies = new Map();
@@ -266,8 +267,7 @@ export class ForestView {
     element.append(this.renderer.domElement);
     this.scene.add(new T.HemisphereLight(0xfff7df, 0x78634e, 2.05));
     const sun = new T.DirectionalLight(0xfff5d7, 1.4);
-    // Keep the sun nearly in the cross-section so canopy shadows land on the visible strip.
-    sun.position.set(-13, 32, 0.65);
+    sun.position.set(0, 32, 0);
     Object.assign(sun.shadow.camera, {
       left: -38, right: 38, top: 5, bottom: -5, near: 0.5, far: 65,
     });
@@ -276,6 +276,7 @@ export class ForestView {
     sun.shadow.mapSize.set(2048, 512);
     sun.shadow.normalBias = 0.025;
     sun.shadow.bias = -0.00012;
+    sun.shadow.intensity = 0.72;
     sun.castShadow = true;
     this.scene.add(sun);
     this.updateQueue = new Set();
@@ -1434,7 +1435,7 @@ export class ForestView {
     this.dogBody.name = "dog-body";
     this.farmer.add(this.dogBody);
     const coat = 0xc5915c, darkCoat = 0xa16c40, chest = 0xe1bc8b;
-    box(this.dogBody, 0, 0.63, -0.17, 0.45, 0.36, 0.94, coat);
+    box(this.dogBody, 0, dogTorsoY, dogTorsoZ, 0.45, dogTorsoHeight, dogTorsoDepth, coat);
     box(this.dogBody, 0, 0.61, 0.301, 0.26, 0.19, 0.017, chest);
 
     const head = new T.Group();
@@ -1483,30 +1484,44 @@ export class ForestView {
   noteActivity() {
     this.dogSitAt = this.time + 5 + Math.random() * 6;
   }
+  keepDogInView() {
+    if (this.cameraMove) return;
+    const { clientWidth: width, clientHeight: height } = this.element;
+    const screen = this.project(this.farmerX, 0.6);
+    if (screen.y < 0 || screen.y > height || (screen.x >= 0 && screen.x <= width)) return;
+    const targetX = this.project(this.target, 0.6).x;
+    if (targetX < width * 0.1 || targetX > width * 0.9)
+      this.target = clamp(this.center.x, -MAP_HALF + 0.6, MAP_HALF - 0.6);
+  }
   animateDog(dt, time, moving, direction) {
     if (moving) this.dogSitAt = Math.max(this.dogSitAt, time + 5);
     const sitting = !moving && time >= this.dogSitAt;
     this.dogSit += ((sitting ? 1 : 0) - this.dogSit) * (1 - Math.exp(-dt * 4.5));
     const sit = this.dogSit;
-    const yaw = moving ? direction * Math.PI / 2 : 0.42;
+    const yaw = moving ? direction * Math.PI / 2 : 0.42 * (1 - sit);
     this.farmer.rotation.y += (yaw - this.farmer.rotation.y) * Math.min(1, dt * 9);
 
-    // Rotate the torso around the rear hips, then lower it into a sit.
+    // Rotate around the hips and lower the rear bottom corner to the ground.
     const pitch = -0.35 * sit;
     const cos = Math.cos(pitch), sin = Math.sin(pitch);
     this.dogBody.rotation.x = pitch;
-    this.dogBody.position.y = dogLegHeight * (1 - cos) + dogRearZ * sin - 0.26 * sit;
+    const hipY = dogLegHeight * (1 - cos) + dogRearZ * sin;
+    const groundedY = -(dogTorsoY - dogTorsoHeight / 2) * cos +
+      (dogTorsoZ - dogTorsoDepth / 2) * sin;
+    this.dogBody.position.y = hipY + (groundedY - hipY) * sit;
     this.dogBody.position.z = dogRearZ * (1 - cos) - dogLegHeight * sin;
     this.legs.forEach((leg, i) => {
       const z = leg.userData.stanceZ;
       leg.position.y = this.dogBody.position.y + dogLegHeight * cos - z * sin;
       leg.position.z = this.dogBody.position.z + dogLegHeight * sin + z * cos;
       const rear = z === dogRearZ;
-      const folded = rear ? -Math.acos(clamp(leg.position.y / dogLegHeight)) : 0;
+      const pawDepth = 0.071;
+      const folded = rear ? -Math.acos(clamp((leg.position.y - pawDepth * sit) / dogLegHeight)) : 0;
       const phase = i === 0 || i === 3 ? 0 : Math.PI;
       const stride = moving ? Math.sin(time * 10 + phase) * 0.41 * (1 - sit) : 0;
       leg.rotation.x = folded + stride;
-      leg.scale.y = rear ? 1 : leg.position.y / dogLegHeight;
+      const clearance = leg.position.y - pawDepth * Math.sin(-folded);
+      leg.scale.y = clamp(clearance / (dogLegHeight * Math.cos(folded)));
     });
 
     if (!sitting) this.dogNextTilt = Infinity;
@@ -1517,9 +1532,13 @@ export class ForestView {
       this.dogNextTilt = time + 4 + Math.random() * 6;
     }
     const tiltProgress = clamp((time - this.dogTiltAt) / 2.1);
-    this.dogHead.rotation.x = -pitch;
-    this.dogHead.rotation.y = -0.32 * sit;
-    this.dogHead.rotation.z = (this.dogTiltSide ?? 1) * Math.sin(Math.PI * tiltProgress) * 0.2 * sit;
+    this.dogHead.rotation.set(-pitch, 0, 0);
+    if (sit > 0.001) {
+      const rest = (this.dogHeadRest ??= new T.Quaternion()).copy(this.dogHead.quaternion);
+      this.dogHead.lookAt(this.camera.position);
+      this.dogHead.quaternion.slerp(rest, 1 - sit);
+      this.dogHead.rotateZ((this.dogTiltSide ?? 1) * Math.sin(Math.PI * tiltProgress) * 0.2 * sit);
+    }
     const wag = Math.sin(time * (moving ? 9 : 5));
     this.tail.rotation.y = wag * 0.28;
     this.tail.rotation.z = wag * 0.37;
@@ -1899,6 +1918,7 @@ export class ForestView {
     });
     this.can.visible = tool === "water";
     this.animateCamera(time);
+    this.keepDogInView();
     if (tool) this.positionTool(tool, pointer, applying);
     const delta = this.target - this.farmerX;
     const step = Math.sign(delta) * Math.min(Math.abs(delta), dt * 2.8);
@@ -2045,7 +2065,7 @@ export class ForestView {
     }
     if (time >= this.nextShadowAt) {
       this.renderer.shadowMap.needsUpdate = true;
-      this.nextShadowAt = time + 1 / 12;
+      this.nextShadowAt = time + 1;
     }
     this.renderer.render(this.scene, this.camera);
     this.element.dataset.poseUpdates = this.poseUpdates;

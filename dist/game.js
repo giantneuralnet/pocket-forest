@@ -24,7 +24,7 @@ import {
   packState,
   score,
 } from "./ecology.js?v=20";
-import { ForestView } from "./forest-view.js?v=20";
+import { ForestView } from "./forest-view.js?v=21";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -740,7 +740,6 @@ world.addEventListener("pointerdown", (e) => {
       e.pointerType === "touch" ? 24 : 12,
     ),
     point = view.worldPoint(e.clientX, e.clientY);
-  if (!tool) view.target = point.x;
   if (!tool && point.y < 0) {
     const soil = view.inspectSoil(e.clientX, e.clientY);
     if (soil) showSoilTooltip(soil, e.clientX, e.clientY);
@@ -832,6 +831,8 @@ function endPointer(e) {
     return;
   }
   applying = false;
+  if (gesture && !gesture.moved && !gesture.multi && !tool)
+    view.target = view.worldPoint(e.clientX, e.clientY).x;
   if (gesture && !gesture.moved && !gesture.multi && !tool && state.phase === 2 && selectedSpecies && !gesture.plant) {
     const point = view.worldPoint(e.clientX, e.clientY);
     if (Math.abs(point.x) <= HALF) {
