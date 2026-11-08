@@ -24,7 +24,7 @@ import {
   WORM_LIMIT,
   WORM_STEP_DAYS,
   rootThickness,
-} from "./ecology.js?v=17-2";
+} from "./ecology.js?v=18";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
@@ -380,6 +380,7 @@ export class ForestView {
         this.soilMesh.setMatrixAt(r * COLS + c, dummy.matrix);
         this.paintSoilTile(r * COLS + c, soilColor);
       }
+    this.addSoilDetail();
     this.mulchMesh = new T.InstancedMesh(boxGeometry, material(0x9b743e), COLS);
     this.scene.add(this.mulchMesh);
     this.waterMesh = new T.InstancedMesh(
@@ -1000,6 +1001,47 @@ export class ForestView {
     this.updateGhosts();
     this.scene.updateMatrixWorld(true);
   }
+  addSoilDetail() {
+    const seed = this.state.soilSeed;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    for (let i = 0; i < 2400; i++) {
+      const key = seed + i * 11;
+      const x = random(key) * 128, y = random(key + 1) * 128;
+      const size = 0.5 + random(key + 2) * 1.6;
+      ctx.fillStyle = i % 2 ? "#eed4a021" : "#23170f28";
+      ctx.fillRect(x, y, size, size * 0.74);
+    }
+    const map = new T.CanvasTexture(canvas);
+    map.colorSpace = T.SRGBColorSpace;
+    map.wrapS = map.wrapT = T.RepeatWrapping;
+    map.repeat.set(MAP_HALF * 2 / 2.8, DEPTH / 2.8);
+    const grain = new T.Mesh(new T.PlaneGeometry(MAP_HALF * 2, DEPTH),
+      new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false }));
+    grain.position.set(0, -DEPTH / 2, 0.004);
+    grain.renderOrder = -0.8;
+    this.ground.add(grain);
+
+    const count = Math.round(MAP_HALF * DEPTH * 4);
+    const stones = new T.InstancedMesh(new T.IcosahedronGeometry(0.5),
+      new T.MeshBasicMaterial({ transparent: true, opacity: 0.63, depthWrite: false }), count);
+    const dummy = new T.Object3D();
+    const palette = [0x746452, 0x584e43, 0x8a755b, 0x6a6459].map(hex => new T.Color(hex));
+    for (let i = 0; i < count; i++) {
+      const key = seed + i * 13 + 183;
+      const width = 0.05 + random(key + 3) ** 2 * 0.31;
+      dummy.position.set((random(key) * 2 - 1) * (MAP_HALF - 0.2),
+        -0.2 - random(key + 1) * (DEPTH - 0.4), 0.009);
+      dummy.rotation.z = random(key + 2) * Math.PI;
+      dummy.scale.set(width, width * (0.42 + random(key + 4) * 0.38), 0.018);
+      dummy.updateMatrix();
+      stones.setMatrixAt(i, dummy.matrix);
+      stones.setColorAt(i, palette[i % palette.length]);
+    }
+    stones.renderOrder = -0.7;
+    this.ground.add(stones);
+  }
   updateSoil() {
     const dummy = new T.Object3D(),
       color = new T.Color();
@@ -1329,42 +1371,42 @@ export class ForestView {
     this.target = 0;
     const shirt = foliageColor(getSpecies("cinnamon")).getHex();
     const pants = foliageColor(getSpecies("oak")).getHex();
-    box(this.farmer, 0, 0.88, 0, 0.44, 0.6, 0.28, shirt);
+    box(this.farmer, 0, 0.9, 0, 0.44, 0.6, 0.28, shirt);
     const head = new T.Group();
-    head.position.y = 1.375;
+    head.position.y = 1.38;
     this.farmer.add(head);
-    box(head, 0, 0, 0, 0.4, 0.4, 0.4, 0xd3ae86);
+    box(head, 0, 0, 0, 0.36, 0.36, 0.36, 0xd3ae86);
     const faceTexture = new T.TextureLoader().load(
-      window.POCKET_FOREST_FACE ?? "art/farmer-face.png?v=17-2",
+      window.POCKET_FOREST_FACE ?? "art/farmer-face.png?v=18",
       () => this.thumbnails?.clear(),
     );
     faceTexture.colorSpace = T.SRGBColorSpace;
-    const face = new T.Mesh(new T.PlaneGeometry(0.4, 0.4),
+    const face = new T.Mesh(new T.PlaneGeometry(0.36, 0.36),
       new T.MeshBasicMaterial({ map: faceTexture, alphaTest: 0.3 }));
-    face.position.z = 0.201;
+    face.position.z = 0.181;
     head.add(face);
-    box(head, 0, 0.146, 0, 0.424, 0.142, 0.424, 0x514034);
-    box(head, 0, 0.205, 0, 0.73, 0.09, 0.63, 0xd5ba76);
-    box(head, 0, 0.295, 0, 0.37, 0.12, 0.35, 0xbda16c);
+    box(head, 0, 0.129, 0, 0.384, 0.126, 0.384, 0x514034);
+    box(head, 0, 0.205, 0, 0.65, 0.09, 0.55, 0xd5ba76);
+    box(head, 0, 0.295, 0, 0.34, 0.12, 0.32, 0xbda16c);
     this.legs = [];
     this.arms = [];
     for (const side of [-1, 1]) {
       const leg = new T.Group();
-      leg.position.set(side * 0.11, 0.58, 0);
+      leg.position.set(side * 0.11, 0.6, 0);
       this.farmer.add(leg);
-      box(leg, 0, -0.235, 0, 0.22, 0.47, 0.25, pants);
-      box(leg, 0, -0.525, 0.04, 0.24, 0.11, 0.33, 0x554c38);
+      box(leg, 0, -0.245, 0, 0.22, 0.49, 0.25, pants);
+      box(leg, 0, -0.545, 0.04, 0.24, 0.11, 0.33, 0x554c38);
       this.legs.push(leg);
       const arm = new T.Group();
-      arm.position.set(side * 0.32, 1.18, 0);
+      arm.position.set(side * 0.32, 1.2, 0);
       this.farmer.add(arm);
-      box(arm, 0, -0.325, 0, 0.20, 0.65, 0.24, 0xd3ae86);
+      box(arm, 0, -0.3, 0, 0.20, 0.6, 0.24, 0xd3ae86);
       this.arms.push(arm);
     }
-    box(this.farmer, 0, 0.884, 0.147, 0.028, 0.28, 0.012, 0xd5e4a2);
+    box(this.farmer, 0, 0.904, 0.147, 0.028, 0.28, 0.012, 0xd5e4a2);
     for (const [index, length] of [0.116, 0.086, 0.055].entries()) {
       for (const side of [-1, 1]) {
-        const branch = box(this.farmer, side * length * 0.36, 0.842 + index * 0.065, 0.147,
+        const branch = box(this.farmer, side * length * 0.36, 0.862 + index * 0.065, 0.147,
           0.023 - index * 0.004, length, 0.012, 0xd5e4a2);
         branch.rotation.z = -side * 0.92;
       }

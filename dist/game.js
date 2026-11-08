@@ -21,8 +21,8 @@ import {
   TIME_RATES,
   packState,
   score,
-} from "./ecology.js?v=17-2";
-import { ForestView } from "./forest-view.js?v=17-2";
+} from "./ecology.js?v=18-2";
+import { ForestView } from "./forest-view.js?v=18-2";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -191,14 +191,14 @@ function plantReadings(p) {
 }
 function openPlantNote(p) {
   const sp = byId(p.sid);
-  const recorded = state.survey.includes(sp.id);
+  const recorded = state.surveyPlants.includes(p.id);
   const readings = p.wild ? null : plantReadings(p);
   panel(
     entry(sp) +
       (p.health === 0 ? `<p class="death-note"><strong>Cause of death</strong><br>${p.deathReason || "Unknown. This save predates cause-of-death tracking."}</p>` : "") +
       (readings ? `<p>Health <strong>${readings.health}%</strong> · age <strong>${formatAge(p.age)}</strong><br>Current height ${plantHeight(p).toFixed(1)} m<br>Root-zone moisture ${readings.moisture}% · nutrients ${readings.nutrients}%<br>Light ${readings.light}%</p>` : "") +
       (recorded
-        ? '<button class="notebook-added" disabled>✓ Added to Notebook</button>'
+        ? `<button class="notebook-added" disabled>${state.phase === 0 ? "✓ Surveyed" : "✓ Added to Notebook"}</button>`
         : state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
   );
   if ($("addNote")) $("addNote").onclick = () => {
@@ -227,8 +227,9 @@ function showTooltip(p, x, y, touch = false) {
   }
   const sp = byId(p.sid),
     el = $("tooltip");
-  const instruction = sp.type === "weed" ? "Tap to pull out"
-    : p.wild && !state.surveyPlants.includes(p.id) ? "Tap to survey"
+  const instruction = state.phase === 0
+    ? state.surveyPlants.includes(p.id) ? '<span class="survey-checked">✓ Surveyed</span>' : "Tap to survey"
+    : sp.type === "weed" ? "Tap to pull out"
     : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant";
   if (p.wild) {
     el.innerHTML = `<strong>${sp.name} · ${sp.height} m</strong><small><i>${sp.latin}</i><br>${nativeText(sp)} · ${layers[sp.layer]}<br>${instruction}</small>`;

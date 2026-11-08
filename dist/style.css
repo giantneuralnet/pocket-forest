@@ -769,12 +769,12 @@ meter::-webkit-meter-optimum-value {
 
 /* A single dark visual system for tools, notebook and confirmations. */
 :root { --ink:#f1f5fa; --paper:#141e2c; --line:#425166; }
-dialog, #selection, #tooltip, #toast { color:#f1f5fa; background:#141e2cf5; border-color:#425166; }
-dialog p, dialog small, dialog i, dialog .eyebrow, #tooltip small { color:#bbc9da; }
-dialog button, #selection button { background:#26374d; color:#f1f5fa; border-color:#526277; }
-dialog .badge { background:#263d4e; color:#dbeaf5; }
-dialog .entry { border-color:#425166; }
-dialog::backdrop { background:#060c1699; }
+dialog, #selection, #tooltip, #toast { color:#f1f8ee; background:#1c372bf7; border-color:#54765d; }
+dialog p, dialog small, dialog i, dialog .eyebrow, #tooltip small { color:#c8ddcb; }
+dialog button, #selection button { background:#2c4938; color:#f1f8ee; border-color:#61846a; }
+dialog .badge { background:#32523e; color:#e1f2de; }
+dialog .entry { border-color:#54765d; }
+dialog::backdrop { background:#081a1299; }
 .nutrient-return { position:absolute; top:0; left:0; pointer-events:none; color:#b9f69d; background:#122319d9; padding:3px 7px; border-radius:5px; font:11px system-ui; white-space:nowrap; }
 
 #topHUD {
@@ -932,8 +932,8 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
   position: static;
   flex: 0 0 auto;
   padding: 10px 58px 10px 16px;
-  background: #141e2c;
-  border-bottom: 1px solid #425166;
+  background: #1c372b;
+  border-bottom: 1px solid #54765d;
 }
 .shop-heading h2 { margin: 0; font-size: 22px; }
 .shop-list { overflow-y: auto; min-height: 0; padding: 0 14px 10px; touch-action: pan-y; }
@@ -945,7 +945,7 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
   #topHUD #timeline:has(progress[hidden]) { min-width: 0; max-width: 100%; }
 }
 
-#panel.shop-panel button:hover:not(:disabled) { background: #3a526d; }
+#panel.shop-panel button:hover:not(:disabled) { background: #426a50; }
 
 #timeline #speeds { display: flex; justify-content: center; gap: 4px; margin-top: 5px; }
 #speeds button {
@@ -982,7 +982,7 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
 .review-actions button { width: 100%; min-height: 44px; padding: 9px 12px; margin: 0; }
 .score-row .subgrade { display: inline-block; min-width: 1.5em; margin-left: 5px; text-align: right; }
 .plant-height, .plant-latin { font-size: 17px; }
-.plant-height { color: #bbc9da; white-space: nowrap; }
+.plant-height { color: #c8ddcb; white-space: nowrap; }
 .plant-badges .badge { font-size: 15px; }
 @media (max-width: 540px) {
   #toolBin #next { max-width: 120px; white-space: normal; }
@@ -1002,3 +1002,5 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
 @media (max-width: 370px) {
   #toolBin :is(#home, #notebook, #sound, #back, #next, #restart) { width: 38px; min-height: 38px; }
 }
+
+.survey-checked { color: #bcf7ba; font-weight: 750; }

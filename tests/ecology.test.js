@@ -38,7 +38,7 @@ test("a pour pools first and wets the top before deep soil", () => {
   assert.equal(s.surface[colAt(0)], 20);
   hydrology(s, 0.1);
   hydrology(control, 0.1);
-  assert.ok(s.soil[colAt(0)].m > control.soil[32].m);
+  assert.ok(s.soil[colAt(0)].m > control.soil[colAt(0)].m);
   assert.ok(s.surface[colAt(0)] > 0);
   assert.equal(s.soil[COLS * (ROWS - 1) + colAt(0)].m, control.soil[COLS * (ROWS - 1) + colAt(0)].m);
 });

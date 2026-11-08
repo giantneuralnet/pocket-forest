@@ -1,9 +1,9 @@
 import { species } from "./species.js";
-const SAVE_VERSION = 5;
+const SAVE_VERSION = 6;
 export const HALF = 20 / 3,
-  PLOT_COLS = 40,
-  COLS = 134,
-  ROWS = 21,
+  PLOT_COLS = 20,
+  COLS = 100,
+  ROWS = 11,
   CW = (HALF * 2) / PLOT_COLS,
   CH = CW,
   DEPTH = ROWS * CH,
@@ -332,7 +332,7 @@ export function returnWeedToSoil(s, weed) {
 }
 export const WORM_LIMIT = 8;
 const wormRows = ROWS - 1;
-export const WORM_STEP_DAYS = 5;
+export const WORM_STEP_DAYS = 10;
 export function stepWorms(state) {
   const { worms, soil, day } = state;
   if (day % 12 === 0 && worms.length < WORM_LIMIT) {
@@ -340,7 +340,7 @@ export function stepWorms(state) {
     const edge = inward === 1 ? PLOT_FIRST - 1 : PLOT_END;
     const habitat = [];
     for (let row = 2; row <= 6; row++)
-      for (let offset = 2; offset <= 5; offset++) {
+      for (let offset = 1; offset <= 2; offset++) {
         const col = edge - inward * offset;
         const cell = soil[row * COLS + col];
         if (cell.m >= 30 && cell.n >= 36 &&
@@ -362,8 +362,8 @@ export function stepWorms(state) {
       target.n += deposit;
       worm.cargo -= deposit;
     }
-    if ((worm.inward === 1 && worm.col >= PLOT_FIRST + 3) ||
-        (worm.inward === -1 && worm.col <= PLOT_END - 4)) {
+    if ((worm.inward === 1 && worm.col >= PLOT_FIRST + 1) ||
+        (worm.inward === -1 && worm.col <= PLOT_END - 2)) {
       delete worm.inward;
       worm.turnDay = day;
     }
@@ -393,7 +393,7 @@ export function stepWorms(state) {
           worm.heading = dx;
           worm.slope = dy;
         }
-      worm.turnDay = day + 30 + Math.floor(random(key + 10) * 21);
+      worm.turnDay = day + WORM_STEP_DAYS * (6 + Math.floor(random(key + 10) * 5));
     }
     const dy = (!worm.inward && chooseHeading && worm.cargo === 0) || random(key + 20) < 0.24
       ? worm.slope : 0;
