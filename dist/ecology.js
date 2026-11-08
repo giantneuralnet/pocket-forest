@@ -214,6 +214,31 @@ export function hydrology(s, dt) {
     }
   s.soil.forEach((a, i) => (a.m = clamp(a.m + transfer[i], 0, 100)));
 }
+const nutrientBuffers = new WeakMap();
+function diffuseNutrients(state) {
+  const { soil } = state;
+  let transfer = nutrientBuffers.get(state);
+  if (!transfer) {
+    transfer = new Float64Array(soil.length);
+    nutrientBuffers.set(state, transfer);
+  }
+  transfer.fill(0);
+  const exchange = (i, j) => {
+    const a = soil[i], b = soil[j];
+    const moisture = clamp((Math.min(a.m, b.m) - 15) / 25);
+    const fertility = clamp((Math.min(a.n, b.n) - 8) / 20);
+    const flux = (a.n - b.n) * 0.003 * moisture * fertility;
+    transfer[i] -= flux;
+    transfer[j] += flux;
+  };
+  for (let row = 0; row < ROWS; row++)
+    for (let col = 0; col < COLS; col++) {
+      const i = row * COLS + col;
+      if (col + 1 < COLS) exchange(i, i + 1);
+      if (row + 1 < ROWS) exchange(i, i + COLS);
+    }
+  soil.forEach((cell, i) => { cell.n += transfer[i]; });
+}
 export function growRoots(s, p) {
   p.roots ??= [];
   p.tips ??= [];
@@ -438,6 +463,7 @@ export function stepDay(s, exposure = () => ({ light: 1, rain: 1 })) {
     }
     top.mulch = Math.max(0, top.mulch - 0.00013);
   }
+  diffuseNutrients(s);
   for (const p of [...s.plants, ...s.weeds]) {
     if (!p.planted || p.health === 0) continue;
     const sp = getSpecies(p.sid);

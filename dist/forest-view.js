@@ -24,7 +24,7 @@ import {
   WORM_LIMIT,
   WORM_STEP_DAYS,
   rootThickness,
-} from "./ecology.js?v=19-2";
+} from "./ecology.js?v=20";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
@@ -210,7 +210,13 @@ function stamp(sp) {
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
   texture.magFilter = T.LinearFilter;
-  const result = { texture, alpha: c.getImageData(0, 0, 128, 128).data };
+  const shadow = new T.MeshDepthMaterial({
+    map: texture,
+    alphaTest: 0.45,
+    side: T.DoubleSide,
+    depthPacking: T.RGBADepthPacking,
+  });
+  const result = { texture, shadow, alpha: c.getImageData(0, 0, 128, 128).data };
   leafStamps.set(sp.id, result);
   return result;
 }
@@ -253,10 +259,24 @@ export class ForestView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     this.renderer.setClearColor("#a9d7f1");
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = T.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.nextShadowAt = 0;
     element.append(this.renderer.domElement);
     this.scene.add(new T.HemisphereLight(0xfff7df, 0x78634e, 2.05));
     const sun = new T.DirectionalLight(0xfff5d7, 1.4);
-    sun.position.set(-15, 25, 30);
+    // Keep the sun nearly in the cross-section so canopy shadows land on the visible strip.
+    sun.position.set(-13, 32, 0.65);
+    Object.assign(sun.shadow.camera, {
+      left: -38, right: 38, top: 5, bottom: -5, near: 0.5, far: 65,
+    });
+    sun.shadow.camera.up.set(0, 0, 1);
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.shadow.mapSize.set(2048, 512);
+    sun.shadow.normalBias = 0.025;
+    sun.shadow.bias = -0.00012;
+    sun.castShadow = true;
     this.scene.add(sun);
     this.updateQueue = new Set();
     this.poseUpdates = 0;
@@ -299,6 +319,14 @@ export class ForestView {
     soilBase.position.set(0, -DEPTH / 2, -soilDepth / 2);
     soilBase.renderOrder = -2;
     this.ground.add(soilBase);
+    const groundShadow = new T.Mesh(
+      new T.PlaneGeometry(MAP_HALF * 2, soilDepth),
+      new T.ShadowMaterial({ opacity: 0.46, depthWrite: false }),
+    );
+    groundShadow.rotation.x = -Math.PI / 2;
+    groundShadow.position.set(0, 0.002, -soilDepth / 2);
+    groundShadow.receiveShadow = true;
+    this.ground.add(groundShadow);
     this.bedrockMaterial = new T.MeshBasicMaterial({ depthWrite: false });
     const bedrock = new T.Mesh(new T.PlaneGeometry(lowerSoilWidth, lowerSoilHeight), this.bedrockMaterial);
     bedrock.position.set(0, -DEPTH - lowerSoilHeight / 2, -0.025);
@@ -384,6 +412,7 @@ export class ForestView {
       }
     this.addSoilDetail();
     this.mulchMesh = new T.InstancedMesh(boxGeometry, material(0x9b743e), COLS);
+    this.mulchMesh.receiveShadow = true;
     this.scene.add(this.mulchMesh);
     this.waterMesh = new T.InstancedMesh(
       boxGeometry,
@@ -576,6 +605,7 @@ export class ForestView {
       record.recipe.nodes.length + data.length,
     );
     record.wood.userData.pid = p.id;
+    record.wood.receiveShadow = true;
     g.add(record.wood);
     this.pickables.push(record.wood);
     const st = stamp(sp),
@@ -586,6 +616,8 @@ export class ForestView {
         side: T.DoubleSide,
       });
     const leaves = new T.InstancedMesh(leafGeometry, leafMat, data.length);
+    leaves.customDepthMaterial = st.shadow;
+    leaves.receiveShadow = true;
     leaves.userData.pid = p.id;
     leaves.userData.leaf = true;
     g.add(leaves);
@@ -632,6 +664,7 @@ export class ForestView {
     const h = plantHeight(p),
       health = p.health ?? 95;
     rec.height = h;
+    rec.wood.castShadow = leaves.castShadow = p.planted && sp.type !== "weed";
     rec.trunkRadius = h * branchWidth(rec, rec.recipe.nodes[0]) * 0.5;
     group.position.set(p.x, p.planted ? 0 : p.drop || 0, 0);
     rec.pot.visible = !p.planted;
@@ -1443,6 +1476,9 @@ export class ForestView {
     this.tail.rotation.x = -0.82;
     this.dogBody.add(this.tail);
     box(this.tail, 0, 0.19, 0, 0.106, 0.4, 0.106, coat);
+    this.farmer.traverse(part => {
+      if (part.material?.isMeshLambertMaterial) part.receiveShadow = true;
+    });
   }
   noteActivity() {
     this.dogSitAt = this.time + 5 + Math.random() * 6;
@@ -2006,6 +2042,10 @@ export class ForestView {
         this.rainDrops.setMatrixAt(i, d.matrix);
       }
       this.rainDrops.instanceMatrix.needsUpdate = true;
+    }
+    if (time >= this.nextShadowAt) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.nextShadowAt = time + 1 / 12;
     }
     this.renderer.render(this.scene, this.camera);
     this.element.dataset.poseUpdates = this.poseUpdates;

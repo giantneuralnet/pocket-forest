@@ -222,21 +222,43 @@ test("worms emerge in both woods and travel gradually into the planting bed", ()
 });
 
 test("infiltrating water cannot move nutrients to neighboring cells", async () => {
-  const { hydrology, stepDay, addWater, colAt, prepareSoilAt } = await import("../dist/ecology.js");
+  const { hydrology, addWater, colAt, prepareSoilAt } = await import("../dist/ecology.js");
   const state = freshState(42);
   state.phase = 4;
   const center = colAt(0);
   for (const cell of state.soil) { cell.m = 45; cell.n = 20; }
   prepareSoilAt(state, 0, "compost");
   addWater(state, 0, 40);
-  for (let day = 0; day < 4; day++) {
-    hydrology(state, 0.4);
-    stepDay(state);
-  }
+  for (let step = 0; step < 4; step++) hydrology(state, 0.4);
   assert.ok(state.soil[center].n > 20);
   assert.ok(state.soil[center + COLS].m > 45);
   assert.equal(state.soil[center + COLS].n, 20);
   assert.equal(state.soil[center + 1].n, 20);
+});
+
+test("nutrients diffuse slowly in moist soil and stop at dry or depleted tiles", async () => {
+  const { stepDay, colAt } = await import("../dist/ecology.js");
+  const state = freshState(42);
+  const center = COLS * 3 + colAt(0);
+  const source = state.soil[center], neighbor = state.soil[center + 1];
+  const above = state.soil[center - COLS];
+  const dry = state.soil[center - 1], depleted = state.soil[center + COLS];
+  state.soil.forEach(cell => Object.assign(cell, { m: 0, n: 30 }));
+  source.n = 80;
+  depleted.n = 5;
+  const total = () => state.soil.reduce((sum, cell) => sum + cell.n, 0);
+  const before = total();
+  for (let day = 0; day < 90; day++) {
+    state.weeds.length = 0;
+    for (const cell of [source, neighbor, above, depleted]) cell.m = 45;
+    stepDay(state);
+    if (day === 0) assert.ok(neighbor.n > 30 && neighbor.n < 30.2);
+  }
+  assert.ok(neighbor.n > 38);
+  assert.ok(above.n > 38);
+  assert.equal(dry.n, 30);
+  assert.equal(depleted.n, 5);
+  assert.ok(Math.abs(total() - before) < 1e-8);
 });
 
 test("digging deep alters only the selected tile and its neighbors", async () => {
