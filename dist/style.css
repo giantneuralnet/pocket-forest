@@ -1004,3 +1004,26 @@ dialog .notebook-added:disabled { opacity: 1; color: #c6eacb; background: #24433
 }
 
 .survey-checked { color: #bcf7ba; font-weight: 750; }
+
+.toolbar-icon {
+  width: 21px;
+  height: 21px;
+  vertical-align: middle;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#sound[aria-pressed="false"] .sound-waves,
+#sound[aria-pressed="true"] .sound-muted {
+  display: none;
+}
+
+dialog.survey-pending, #tooltip.survey-pending {
+  color: #f1f5fa;
+  background: #192e48f7;
+  border-color: #4b688b;
+}
+dialog.survey-pending :is(p, i, .plant-height), #tooltip.survey-pending small { color: #c7d9ef; }
+dialog.survey-pending .badge:not(.exotic) { background: #2b4868; color: #e4f1fd; }

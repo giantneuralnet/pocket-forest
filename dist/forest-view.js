@@ -32,6 +32,8 @@ const boxGeometry = new T.BoxGeometry(1, 1, 1),
   leafGeometry = new T.PlaneGeometry(1, 1).translate(0, 0.405, 0),
   materialCache = new Map(),
   leafStamps = new Map();
+const lowerSoilHeight = 50, lowerSoilWidth = MAP_HALF * 2 + 3;
+const dogLegHeight = 0.51, dogRearZ = -0.53;
 const flowerGeometry = new T.PlaneGeometry(1, 1);
 const fruitGeometry = new T.SphereGeometry(0.5, 10, 8);
 const flowersBySpecies = new Map();
@@ -298,8 +300,8 @@ export class ForestView {
     soilBase.renderOrder = -2;
     this.ground.add(soilBase);
     this.bedrockMaterial = new T.MeshBasicMaterial({ depthWrite: false });
-    const bedrock = new T.Mesh(new T.PlaneGeometry(MAP_HALF * 2, 100), this.bedrockMaterial);
-    bedrock.position.set(0, -DEPTH - 50, -0.025);
+    const bedrock = new T.Mesh(new T.PlaneGeometry(lowerSoilWidth, lowerSoilHeight), this.bedrockMaterial);
+    bedrock.position.set(0, -DEPTH - lowerSoilHeight / 2, -0.025);
     bedrock.renderOrder = -2;
     this.ground.add(bedrock);
     // The side woodland is entirely foreground and surveyable; no decorative block trees.
@@ -1016,12 +1018,25 @@ export class ForestView {
     const map = new T.CanvasTexture(canvas);
     map.colorSpace = T.SRGBColorSpace;
     map.wrapS = map.wrapT = T.RepeatWrapping;
-    map.repeat.set(MAP_HALF * 2 / 2.8, DEPTH / 2.8);
-    const grain = new T.Mesh(new T.PlaneGeometry(MAP_HALF * 2, DEPTH),
-      new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false }));
-    grain.position.set(0, -DEPTH / 2, 0.004);
-    grain.renderOrder = -0.8;
-    this.ground.add(grain);
+    map.magFilter = map.minFilter = T.NearestFilter;
+    map.generateMipmaps = false;
+    const grainMaterial = new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false });
+    for (const [width, height, top, z] of [
+      [MAP_HALF * 2, DEPTH, 0, 0.004],
+      [lowerSoilWidth, lowerSoilHeight, -DEPTH, -0.02],
+    ]) {
+      const geometry = new T.PlaneGeometry(width, height);
+      const uv = geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) {
+        const x = (uv.getX(i) - 0.5) * width;
+        const y = top + (uv.getY(i) - 1) * height;
+        uv.setXY(i, x / 2.8, y / 2.8);
+      }
+      const grain = new T.Mesh(geometry, grainMaterial);
+      grain.position.set(0, top - height / 2, z);
+      grain.renderOrder = -0.8;
+      this.ground.add(grain);
+    }
 
     const count = Math.round(MAP_HALF * DEPTH * 4);
     const stones = new T.InstancedMesh(new T.IcosahedronGeometry(0.5),
@@ -1030,7 +1045,7 @@ export class ForestView {
     const palette = [0x746452, 0x584e43, 0x8a755b, 0x6a6459].map(hex => new T.Color(hex));
     for (let i = 0; i < count; i++) {
       const key = seed + i * 13 + 183;
-      const width = 0.05 + random(key + 3) ** 2 * 0.31;
+      const width = 0.03 + random(key + 3) ** 2.5 * 0.48;
       dummy.position.set((random(key) * 2 - 1) * (MAP_HALF - 0.2),
         -0.2 - random(key + 1) * (DEPTH - 0.4), 0.009);
       dummy.rotation.z = random(key + 2) * Math.PI;
@@ -1217,8 +1232,16 @@ export class ForestView {
     const tree = this.maturePreview(sp, 42);
     scene.add(tree);
     const farmer = this.farmer.clone();
+    const body = farmer.getObjectByName("dog-body");
+    body.position.set(0, 0, 0);
+    body.rotation.set(0, 0, 0);
+    body.getObjectByName("dog-head").rotation.set(0, 0, 0);
     for (const child of farmer.children) {
-      if (child.userData.walkingLeg) child.rotation.x = 0;
+      if (child.userData.stanceZ == null) continue;
+      child.position.y = dogLegHeight;
+      child.position.z = child.userData.stanceZ;
+      child.rotation.x = 0;
+      child.scale.y = 1;
     }
     farmer.rotation.set(0, -0.48, 0);
     const treeLeft = new T.Box3().setFromObject(tree).min.x;
@@ -1370,38 +1393,45 @@ export class ForestView {
     this.scene.add(this.farmer);
     this.farmerX = 0;
     this.target = 0;
+    this.dogSit = 0;
+    this.dogSitAt = 5 + Math.random() * 5;
+    this.dogNextTilt = Infinity;
+    this.dogTiltAt = -Infinity;
+    this.dogBody = new T.Group();
+    this.dogBody.name = "dog-body";
+    this.farmer.add(this.dogBody);
     const coat = 0xc5915c, darkCoat = 0xa16c40, chest = 0xe1bc8b;
-    box(this.farmer, 0, 0.63, -0.17, 0.45, 0.36, 0.94, coat);
-    box(this.farmer, 0, 0.57, 0.25, 0.37, 0.28, 0.13, chest);
+    box(this.dogBody, 0, 0.63, -0.17, 0.45, 0.36, 0.94, coat);
+    box(this.dogBody, 0, 0.61, 0.301, 0.26, 0.19, 0.017, chest);
 
     const head = new T.Group();
-    head.position.set(0, 0.96, 0.31);
-    this.farmer.add(head);
-    box(head, 0, 0, 0, 0.44, 0.44, 0.44, coat);
+    head.name = "dog-head";
+    head.position.set(0, 0.93, 0.31);
+    this.dogHead = head;
+    this.dogBody.add(head);
+    box(head, 0, 0, 0, 0.44, 0.38, 0.44, coat);
     const faceTexture = new T.TextureLoader().load(
       window.POCKET_FOREST_FACE ?? "art/farmer-face.png?v=18",
       () => this.thumbnails?.clear(),
     );
     faceTexture.colorSpace = T.SRGBColorSpace;
-    const face = new T.Mesh(new T.PlaneGeometry(0.44, 0.44),
+    const face = new T.Mesh(new T.PlaneGeometry(0.44, 0.38),
       new T.MeshBasicMaterial({ map: faceTexture, alphaTest: 0.3 }));
     face.position.z = 0.221;
     head.add(face);
-    box(head, 0, 0.222, 0, 0.68, 0.075, 0.56, 0xd5ba76);
-    box(head, 0, 0.305, 0, 0.36, 0.12, 0.32, 0xbda16c);
+    box(head, 0, 0.192, 0, 0.68, 0.075, 0.56, 0xd5ba76);
+    box(head, 0, 0.275, 0, 0.36, 0.12, 0.32, 0xbda16c);
     for (const side of [-1, 1]) {
-      const ear = box(head, side * 0.235, 0.352, -0.015, 0.13, 0.285, 0.105, darkCoat);
+      const ear = box(head, side * 0.235, 0.322, -0.015, 0.13, 0.285, 0.105, coat);
       ear.rotation.z = side * -0.23;
-      box(head, side * 0.245, 0.397, 0.04, 0.061, 0.124, 0.012, 0xd49b80)
-        .rotation.z = ear.rotation.z;
     }
 
     this.legs = [];
-    for (const z of [0.21, -0.53]) {
+    for (const z of [0.21, dogRearZ]) {
       for (const side of [-1, 1]) {
         const leg = new T.Group();
-        leg.userData.walkingLeg = true;
-        leg.position.set(side * 0.15, 0.51, z);
+        leg.userData.stanceZ = z;
+        leg.position.set(side * 0.15, dogLegHeight, z);
         this.farmer.add(leg);
         box(leg, 0, -0.216, 0, 0.133, 0.432, 0.142, coat);
         box(leg, 0, -0.467, 0.024, 0.146, 0.086, 0.19, darkCoat);
@@ -1411,10 +1441,52 @@ export class ForestView {
     this.tail = new T.Group();
     this.tail.position.set(0, 0.69, -0.59);
     this.tail.rotation.x = -0.82;
-    this.farmer.add(this.tail);
-    box(this.tail, 0, 0.16, 0, 0.107, 0.34, 0.106, coat);
-    const tip = box(this.tail, 0, 0.35, 0.018, 0.085, 0.13, 0.084, darkCoat);
-    tip.rotation.x = 0.24;
+    this.dogBody.add(this.tail);
+    box(this.tail, 0, 0.19, 0, 0.106, 0.4, 0.106, coat);
+  }
+  noteActivity() {
+    this.dogSitAt = this.time + 5 + Math.random() * 6;
+  }
+  animateDog(dt, time, moving, direction) {
+    if (moving) this.dogSitAt = Math.max(this.dogSitAt, time + 5);
+    const sitting = !moving && time >= this.dogSitAt;
+    this.dogSit += ((sitting ? 1 : 0) - this.dogSit) * (1 - Math.exp(-dt * 4.5));
+    const sit = this.dogSit;
+    const yaw = moving ? direction * Math.PI / 2 : 0.42;
+    this.farmer.rotation.y += (yaw - this.farmer.rotation.y) * Math.min(1, dt * 9);
+
+    // Rotate the torso around the rear hips, then lower it into a sit.
+    const pitch = -0.35 * sit;
+    const cos = Math.cos(pitch), sin = Math.sin(pitch);
+    this.dogBody.rotation.x = pitch;
+    this.dogBody.position.y = dogLegHeight * (1 - cos) + dogRearZ * sin - 0.26 * sit;
+    this.dogBody.position.z = dogRearZ * (1 - cos) - dogLegHeight * sin;
+    this.legs.forEach((leg, i) => {
+      const z = leg.userData.stanceZ;
+      leg.position.y = this.dogBody.position.y + dogLegHeight * cos - z * sin;
+      leg.position.z = this.dogBody.position.z + dogLegHeight * sin + z * cos;
+      const rear = z === dogRearZ;
+      const folded = rear ? -Math.acos(clamp(leg.position.y / dogLegHeight)) : 0;
+      const phase = i === 0 || i === 3 ? 0 : Math.PI;
+      const stride = moving ? Math.sin(time * 10 + phase) * 0.41 * (1 - sit) : 0;
+      leg.rotation.x = folded + stride;
+      leg.scale.y = rear ? 1 : leg.position.y / dogLegHeight;
+    });
+
+    if (!sitting) this.dogNextTilt = Infinity;
+    else if (this.dogNextTilt === Infinity) this.dogNextTilt = time + 1 + Math.random() * 3;
+    else if (time >= this.dogNextTilt) {
+      this.dogTiltAt = time;
+      this.dogTiltSide = Math.random() < 0.5 ? -1 : 1;
+      this.dogNextTilt = time + 4 + Math.random() * 6;
+    }
+    const tiltProgress = clamp((time - this.dogTiltAt) / 2.1);
+    this.dogHead.rotation.x = -pitch;
+    this.dogHead.rotation.y = -0.32 * sit;
+    this.dogHead.rotation.z = (this.dogTiltSide ?? 1) * Math.sin(Math.PI * tiltProgress) * 0.2 * sit;
+    const wag = Math.sin(time * (moving ? 9 : 5));
+    this.tail.rotation.y = wag * 0.28;
+    this.tail.rotation.z = wag * 0.37;
   }
   makeTools() {
     this.toolRoot = new T.Group();
@@ -1794,14 +1866,7 @@ export class ForestView {
     this.farmerX += step;
     const moving = Math.abs(this.target - this.farmerX) > 0.025;
     this.farmer.position.x = this.farmerX;
-    const yaw = moving ? Math.sign(delta) * Math.PI / 2 : 0.42;
-    this.farmer.rotation.y += (yaw - this.farmer.rotation.y) * Math.min(1, dt * 11);
-    this.legs.forEach((leg, i) => {
-      const phase = i === 0 || i === 3 ? 0 : Math.PI;
-      leg.rotation.x = moving ? Math.sin(time * 10 + phase) * 0.41 : 0;
-    });
-    this.tail.rotation.y = Math.sin(time * (moving ? 9 : 5)) * 0.28;
-    this.tail.rotation.z = Math.sin(time * (moving ? 9 : 5)) * 0.37;
+    this.animateDog(dt, time, moving, Math.sign(delta));
     this.drainUpdates();
     this.wind = Math.sin(time * 0.82) * 0.014 + Math.sin(time * 0.29) * 0.007;
     for (const r of this.records.values()) {

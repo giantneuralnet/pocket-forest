@@ -22,7 +22,7 @@ import {
   packState,
   score,
 } from "./ecology.js?v=18";
-import { ForestView } from "./forest-view.js?v=18-3";
+import { ForestView } from "./forest-view.js?v=19";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -41,6 +41,8 @@ try {
     "This forest needs WebGL. Open it in a browser with hardware acceleration enabled.";
   throw e;
 }
+for (const type of ["pointerdown", "keydown", "wheel"])
+  window.addEventListener(type, () => view.noteActivity(), { passive: true });
 const sound = new ForestAudio();
 $("sound").onclick = async () => {
   const enabled = !sound.enabled;
@@ -52,7 +54,6 @@ $("sound").onclick = async () => {
   } finally {
     $("sound").disabled = false;
     $("sound").setAttribute("aria-pressed", String(sound.enabled));
-    $("sound").textContent = sound.enabled ? "🔊" : "🔇";
     $("sound").title = sound.enabled ? "Turn sound off" : "Turn sound on";
   }
 };
@@ -121,7 +122,7 @@ function toast(text) {
 let panelReturn = null;
 function panel(html, onClose = null) {
   panelReturn = onClose;
-  $("panel").classList.remove("shop-panel");
+  $("panel").classList.remove("shop-panel", "survey-pending");
   $("panelContent").innerHTML = html;
   if (!$("panel").open) $("panel").showModal();
   hideTooltip();
@@ -201,6 +202,7 @@ function openPlantNote(p) {
         ? `<button class="notebook-added" disabled>${state.phase === 0 ? "✓ Surveyed" : "✓ Added to Notebook"}</button>`
         : state.phase === 0 ? '<button id="addNote" class="primary">Add to Notebook</button>' : ""),
   );
+  $("panel").classList.toggle("survey-pending", state.phase === 0 && !recorded);
   if ($("addNote")) $("addNote").onclick = () => {
     recordSurvey(p);
     $("panel").close();
@@ -214,6 +216,7 @@ function formatAge(age = 0) {
 }
 function hideTooltip() {
   $("tooltip").style.display = "none";
+  $("tooltip").classList.remove("survey-pending");
   view?.highlightSoil();
 }
 function highlight(p) {
@@ -227,8 +230,10 @@ function showTooltip(p, x, y, touch = false) {
   }
   const sp = byId(p.sid),
     el = $("tooltip");
+  const recorded = state.surveyPlants.includes(p.id);
+  el.classList.toggle("survey-pending", state.phase === 0 && !recorded);
   const instruction = state.phase === 0
-    ? state.surveyPlants.includes(p.id) ? '<span class="survey-checked">✓ Surveyed</span>' : "Tap to survey"
+    ? recorded ? '<span class="survey-checked">✓ Surveyed</span>' : "Tap to survey"
     : sp.type === "weed" ? "Tap to pull out"
     : p.planted ? "Tap to inspect" : "Drag to arrange · tap to plant";
   if (p.wild) {
@@ -243,6 +248,7 @@ function showTooltip(p, x, y, touch = false) {
 }
 function showSoilTooltip(sample, x, y) {
   const el = $("tooltip");
+  el.classList.remove("survey-pending");
   el.innerHTML = `<strong>Soil · ${Math.abs(sample.point.y).toFixed(1)} m deep</strong><small>Moisture <b>${sample.cell.m.toFixed(1)}%</b><br>Nutrients <b>${sample.cell.n.toFixed(1)}%</b><br>Drainage <b>${Math.round(sample.cell.d * 100)}%</b></small>`;
   el.style.display = "block";
   el.style.left = clamp(x + 15, 8, innerWidth - 230) + "px";
@@ -949,7 +955,7 @@ new ResizeObserver(([entry]) => {
 }).observe(farmerBubble);
 
 function placeFarmerBubble() {
-  const { x, y } = view.project(view.farmerX, 1.52, view.farmer.position.z);
+  const { x, y } = view.project(view.farmerX, 1.48, view.farmer.position.z);
   const visible = x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight;
   farmerBubble.style.visibility = visible ? "visible" : "hidden";
   if (!visible) return;
