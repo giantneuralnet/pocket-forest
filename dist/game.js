@@ -21,8 +21,8 @@ import {
   TIME_RATES,
   packState,
   score,
-} from "./ecology.js?v=18-2";
-import { ForestView } from "./forest-view.js?v=18-2";
+} from "./ecology.js?v=18";
+import { ForestView } from "./forest-view.js?v=18-3";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -949,7 +949,7 @@ new ResizeObserver(([entry]) => {
 }).observe(farmerBubble);
 
 function placeFarmerBubble() {
-  const { x, y } = view.project(view.farmerX, 1.79, view.farmer.position.z);
+  const { x, y } = view.project(view.farmerX, 1.52, view.farmer.position.z);
   const visible = x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight;
   farmerBubble.style.visibility = visible ? "visible" : "hidden";
   if (!visible) return;

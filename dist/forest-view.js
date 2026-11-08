@@ -1217,8 +1217,10 @@ export class ForestView {
     const tree = this.maturePreview(sp, 42);
     scene.add(tree);
     const farmer = this.farmer.clone();
-    for (const child of farmer.children) child.rotation.x = 0;
-    farmer.rotation.set(0, 0, 0);
+    for (const child of farmer.children) {
+      if (child.userData.walkingLeg) child.rotation.x = 0;
+    }
+    farmer.rotation.set(0, -0.48, 0);
     const treeLeft = new T.Box3().setFromObject(tree).min.x;
     farmer.position.set(treeLeft - 0.52, 0, 0);
     scene.add(farmer);
@@ -1366,51 +1368,53 @@ export class ForestView {
   makeFarmer() {
     this.farmer = new T.Group();
     this.scene.add(this.farmer);
-    this.farmer.position.z = 0;
     this.farmerX = 0;
     this.target = 0;
-    const shirt = foliageColor(getSpecies("cinnamon")).getHex();
-    const pants = foliageColor(getSpecies("oak")).getHex();
-    box(this.farmer, 0, 0.9, 0, 0.44, 0.6, 0.28, shirt);
+    const coat = 0xc5915c, darkCoat = 0xa16c40, chest = 0xe1bc8b;
+    box(this.farmer, 0, 0.63, -0.17, 0.45, 0.36, 0.94, coat);
+    box(this.farmer, 0, 0.57, 0.25, 0.37, 0.28, 0.13, chest);
+
     const head = new T.Group();
-    head.position.y = 1.38;
+    head.position.set(0, 0.96, 0.31);
     this.farmer.add(head);
-    box(head, 0, 0, 0, 0.36, 0.36, 0.36, 0xd3ae86);
+    box(head, 0, 0, 0, 0.44, 0.44, 0.44, coat);
     const faceTexture = new T.TextureLoader().load(
       window.POCKET_FOREST_FACE ?? "art/farmer-face.png?v=18",
       () => this.thumbnails?.clear(),
     );
     faceTexture.colorSpace = T.SRGBColorSpace;
-    const face = new T.Mesh(new T.PlaneGeometry(0.36, 0.36),
+    const face = new T.Mesh(new T.PlaneGeometry(0.44, 0.44),
       new T.MeshBasicMaterial({ map: faceTexture, alphaTest: 0.3 }));
-    face.position.z = 0.181;
+    face.position.z = 0.221;
     head.add(face);
-    box(head, 0, 0.129, 0, 0.384, 0.126, 0.384, 0x514034);
-    box(head, 0, 0.205, 0, 0.65, 0.09, 0.55, 0xd5ba76);
-    box(head, 0, 0.295, 0, 0.34, 0.12, 0.32, 0xbda16c);
-    this.legs = [];
-    this.arms = [];
+    box(head, 0, 0.222, 0, 0.68, 0.075, 0.56, 0xd5ba76);
+    box(head, 0, 0.305, 0, 0.36, 0.12, 0.32, 0xbda16c);
     for (const side of [-1, 1]) {
-      const leg = new T.Group();
-      leg.position.set(side * 0.11, 0.6, 0);
-      this.farmer.add(leg);
-      box(leg, 0, -0.245, 0, 0.22, 0.49, 0.25, pants);
-      box(leg, 0, -0.545, 0.04, 0.24, 0.11, 0.33, 0x554c38);
-      this.legs.push(leg);
-      const arm = new T.Group();
-      arm.position.set(side * 0.32, 1.2, 0);
-      this.farmer.add(arm);
-      box(arm, 0, -0.3, 0, 0.20, 0.6, 0.24, 0xd3ae86);
-      this.arms.push(arm);
+      const ear = box(head, side * 0.235, 0.352, -0.015, 0.13, 0.285, 0.105, darkCoat);
+      ear.rotation.z = side * -0.23;
+      box(head, side * 0.245, 0.397, 0.04, 0.061, 0.124, 0.012, 0xd49b80)
+        .rotation.z = ear.rotation.z;
     }
-    box(this.farmer, 0, 0.904, 0.147, 0.028, 0.28, 0.012, 0xd5e4a2);
-    for (const [index, length] of [0.116, 0.086, 0.055].entries()) {
+
+    this.legs = [];
+    for (const z of [0.21, -0.53]) {
       for (const side of [-1, 1]) {
-        const branch = box(this.farmer, side * length * 0.36, 0.862 + index * 0.065, 0.147,
-          0.023 - index * 0.004, length, 0.012, 0xd5e4a2);
-        branch.rotation.z = -side * 0.92;
+        const leg = new T.Group();
+        leg.userData.walkingLeg = true;
+        leg.position.set(side * 0.15, 0.51, z);
+        this.farmer.add(leg);
+        box(leg, 0, -0.216, 0, 0.133, 0.432, 0.142, coat);
+        box(leg, 0, -0.467, 0.024, 0.146, 0.086, 0.19, darkCoat);
+        this.legs.push(leg);
       }
     }
+    this.tail = new T.Group();
+    this.tail.position.set(0, 0.69, -0.59);
+    this.tail.rotation.x = -0.82;
+    this.farmer.add(this.tail);
+    box(this.tail, 0, 0.16, 0, 0.107, 0.34, 0.106, coat);
+    const tip = box(this.tail, 0, 0.35, 0.018, 0.085, 0.13, 0.084, darkCoat);
+    tip.rotation.x = 0.24;
   }
   makeTools() {
     this.toolRoot = new T.Group();
@@ -1790,14 +1794,14 @@ export class ForestView {
     this.farmerX += step;
     const moving = Math.abs(this.target - this.farmerX) > 0.025;
     this.farmer.position.x = this.farmerX;
-    const yaw = moving ? Math.sign(delta) * Math.PI / 2 : 0;
+    const yaw = moving ? Math.sign(delta) * Math.PI / 2 : 0.42;
     this.farmer.rotation.y += (yaw - this.farmer.rotation.y) * Math.min(1, dt * 11);
     this.legs.forEach((leg, i) => {
-      leg.rotation.x = moving ? Math.sin(time * 9 + i * Math.PI) * 0.35 : 0;
+      const phase = i === 0 || i === 3 ? 0 : Math.PI;
+      leg.rotation.x = moving ? Math.sin(time * 10 + phase) * 0.41 : 0;
     });
-    this.arms.forEach((arm, i) => {
-      arm.rotation.x = moving ? Math.sin(time * 9 + i * Math.PI) * -0.47 : 0;
-    });
+    this.tail.rotation.y = Math.sin(time * (moving ? 9 : 5)) * 0.28;
+    this.tail.rotation.z = Math.sin(time * (moving ? 9 : 5)) * 0.37;
     this.drainUpdates();
     this.wind = Math.sin(time * 0.82) * 0.014 + Math.sin(time * 0.29) * 0.007;
     for (const r of this.records.values()) {
