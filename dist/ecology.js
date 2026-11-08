@@ -175,13 +175,14 @@ export function hydrology(s, dt) {
     const top = s.soil[c],
       flux = Math.min(
         s.surface[c],
-        dt * factor * (45 + top.d * 19),
+        dt * factor * (61 + top.d * 26),
       );
     s.surface[c] -= flux;
     let moisture = flux * 1.35;
     for (let r = 0; r < ROWS && moisture > 0; r++) {
       const cell = s.soil[r * COLS + c];
-      const absorbed = Math.min(moisture, 100 - cell.m);
+      const share = r === 0 ? moisture * 0.70 : r === 1 ? moisture * 0.73 : moisture;
+      const absorbed = Math.min(share, 100 - cell.m);
       cell.m += absorbed;
       moisture -= absorbed;
     }
@@ -199,14 +200,14 @@ export function hydrology(s, dt) {
       if (r < ROWS - 1) {
         const below = s.soil[i + COLS],
           f =
-            Math.max(0, a.m - below.m + 5) * diffusion * 0.30 * (0.3 + a.d);
+            Math.max(0, a.m - below.m + 5) * diffusion * 0.46 * (0.3 + a.d);
         transfer[i] -= f;
         transfer[i + COLS] += f;
       } else {
         transfer[i] -= Math.max(0, a.m - 72) * a.d * diffusion * 0.025;
       }
       if (c < COLS - 1) {
-        const f = (a.m - s.soil[i + 1].m) * diffusion * 0.095;
+        const f = (a.m - s.soil[i + 1].m) * diffusion * 0.22;
         transfer[i] -= f;
         transfer[i + 1] += f;
       }
@@ -297,27 +298,26 @@ export function growRoots(s, p) {
 }
 export function prepareSoilAt(s, x, tool) {
   const center = colAt(x);
-  const digging = tool === "drainage";
-  const depth = digging ? 5 : 4;
-  const spreadColumns = digging ? 3 : 5;
-  for (let c = Math.max(0, center - spreadColumns); c <= Math.min(COLS - 1, center + spreadColumns); c++) {
-    const spread = 1 - Math.abs(c - center) / (spreadColumns + 2);
-    for (let r = 0; r < depth; r++) {
-      const cell = s.soil[r * COLS + c];
-      const dose = spread * (1 - r / depth);
-      if (digging) {
-        cell.d = Math.min(1, cell.d + 0.42 * dose);
-        cell.m = Math.max(0, cell.m - 4 * dose);
-      }
-      else {
-        cell.n = Math.min(100, cell.n + 2.4 * dose);
-        cell.o = Math.min(1, cell.o + 0.07 * dose);
-        cell.c = Math.min(1, cell.c + 0.06 * dose);
-      }
+  if (tool === "compost") {
+    const cell = s.soil[center];
+    cell.n = Math.min(100, cell.n + 3.6);
+    cell.o = Math.min(1, cell.o + 0.07);
+    cell.c = Math.min(1, cell.c + 0.06);
+    if (s.phase === 1) s.prep[1] = s.prep[2] = true;
+    return;
+  }
+  for (let c = Math.max(0, center - 3); c <= Math.min(COLS - 1, center + 3); c++) {
+    const spread = 1 - Math.abs(c - center) / 5;
+    s.surface[c] = Math.max(0, s.surface[c] - 10 * spread);
+    for (let row = 0; row < 5; row++) {
+      const cell = s.soil[row * COLS + c];
+      const dose = spread * (1 - row / 5);
+      cell.d = Math.min(1, cell.d + 0.42 * dose);
+      cell.m = Math.max(0, cell.m - 16 * dose);
     }
   }
-  if (!digging && s.phase === 1) s.prep[1] = s.prep[2] = true;
 }
+
 export function returnLeafToSoil(state, x, area) {
   const cell = cellAt(state, x);
   const dose = clamp(area, 0.01, 0.4);
@@ -332,30 +332,54 @@ export function returnWeedToSoil(s, weed) {
 }
 export const WORM_LIMIT = 8;
 const wormRows = ROWS - 1;
+export const WORM_STEP_DAYS = 5;
 export function stepWorms(state) {
   const { worms, soil, day } = state;
-  if (day % 16 === 0 && worms.length < WORM_LIMIT) {
-    const habitat = soil.slice(0, COLS * 3).flatMap((cell, index) => {
-      const col = index % COLS, row = Math.floor(index / COLS);
-      return cell.n >= 53 && cell.m >= 34 && cell.m <= 88 &&
-        !worms.some(worm => Math.abs(worm.col - col) < 4) ? [{ col, row }] : [];
-    });
+  if (day % 12 === 0 && worms.length < WORM_LIMIT) {
+    const inward = worms.length % 2 === 0 ? 1 : -1;
+    const edge = inward === 1 ? PLOT_FIRST - 1 : PLOT_END;
+    const habitat = [];
+    for (let row = 2; row <= 6; row++)
+      for (let offset = 2; offset <= 5; offset++) {
+        const col = edge - inward * offset;
+        const cell = soil[row * COLS + col];
+        if (cell.m >= 30 && cell.n >= 36 &&
+            !worms.some(worm => Math.abs(worm.col - col) + Math.abs(worm.row - row) < 2))
+          habitat.push({ col, row });
+      }
     if (habitat.length) {
       const start = habitat[Math.floor(random(day * 4.3) * habitat.length)];
-      worms.push({ ...start, id: day, cargo: 0 });
+      worms.push({ ...start, id: day, cargo: 0, inward });
     }
   }
   for (const worm of worms) {
+    if (worm.nextCol != null) {
+      if (day - worm.moveStart < WORM_STEP_DAYS) continue;
+      worm.col = worm.nextCol;
+      worm.row = worm.nextRow;
+      const target = soil[worm.row * COLS + worm.col];
+      const deposit = Math.min(worm.cargo, 100 - target.n, 0.30);
+      target.n += deposit;
+      worm.cargo -= deposit;
+    }
+    if ((worm.inward === 1 && worm.col >= PLOT_FIRST + 3) ||
+        (worm.inward === -1 && worm.col <= PLOT_END - 4)) {
+      delete worm.inward;
+      worm.turnDay = day;
+    }
     const source = soil[worm.row * COLS + worm.col];
-    if (worm.cargo === 0 && source.n >= 49) {
-      const load = Math.min(1.8, (source.n - 47) * 0.12);
+    if (worm.cargo === 0 && source.n >= 45) {
+      const load = Math.min(2.1, (source.n - 43) * 0.15);
       source.n -= load;
       worm.cargo += load;
     }
     const key = day * 13.7 + worm.id * 9.1;
     const atEdge = worm.col + worm.dx < 0 || worm.col + worm.dx >= COLS;
     const chooseHeading = !worm.turnDay || day >= worm.turnDay || atEdge;
-    if (chooseHeading) {
+    if (worm.inward) {
+      worm.heading = worm.inward;
+      worm.slope = random(key + 9) < 0.5 ? -1 : 1;
+    } else if (chooseHeading) {
       let best = -Infinity;
       for (const dx of [-1, 1])
         for (const dy of [-1, 0, 1]) {
@@ -369,18 +393,15 @@ export function stepWorms(state) {
           worm.heading = dx;
           worm.slope = dy;
         }
-      worm.turnDay = day + 6 + Math.floor(random(key + 10) * 5);
+      worm.turnDay = day + 30 + Math.floor(random(key + 10) * 21);
     }
-    const dy = (chooseHeading && worm.cargo === 0) || random(key + 20) < 0.34 ? worm.slope : 0;
-    const row = clamp(worm.row + dy, 0, wormRows - 1);
-    worm.dy = row - worm.row;
+    const dy = (!worm.inward && chooseHeading && worm.cargo === 0) || random(key + 20) < 0.24
+      ? worm.slope : 0;
+    worm.nextRow = clamp(worm.row + dy, 0, wormRows - 1);
     worm.dx = worm.heading;
-    worm.col += worm.dx;
-    worm.row = row;
-    const target = soil[worm.row * COLS + worm.col];
-    const deposit = Math.min(worm.cargo, 100 - target.n, 0.24);
-    target.n += deposit;
-    worm.cargo -= deposit;
+    worm.dy = worm.nextRow - worm.row;
+    worm.nextCol = worm.col + worm.dx;
+    worm.moveStart = day;
   }
 }
 

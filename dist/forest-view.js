@@ -22,8 +22,9 @@ import {
   sampleSoil,
   soilColorRGB,
   WORM_LIMIT,
+  WORM_STEP_DAYS,
   rootThickness,
-} from "./ecology.js";
+} from "./ecology.js?v=17-2";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
@@ -1046,30 +1047,29 @@ export class ForestView {
     }
     this.scene.updateMatrixWorld();
   }
-  animateWorms(dt, time) {
+  animateWorms(dt, time, simDay) {
     const dummy = this.wormTransform;
     const worms = this.state.worms;
     let count = 0;
     for (const worm of worms) {
-      const x = soilX(worm.col);
-      const y = -(worm.row + 0.5) * CH;
+      const progress = worm.nextCol == null ? 0 : clamp((simDay - worm.moveStart) / WORM_STEP_DAYS);
+      const col = worm.col + ((worm.nextCol ?? worm.col) - worm.col) * progress;
+      const row = worm.row + ((worm.nextRow ?? worm.row) - worm.row) * progress;
+      const x = soilX(col), y = -(row + 0.5) * CH;
       const tilt = -0.32 * (worm.dy || 0) * (worm.dx || 1);
       let pose = this.wormPoses.get(worm.id);
       if (!pose) {
-        pose = { x, y, tilt };
+        pose = { tilt };
         this.wormPoses.set(worm.id, pose);
       }
-      const ease = 1 - Math.exp(-dt * (4 + this.state.speed));
-      pose.x += (x - pose.x) * ease;
-      pose.y += (y - pose.y) * ease;
       pose.tilt += (tilt - pose.tilt) * (1 - Math.exp(-dt * 3));
       const dx = Math.cos(pose.tilt), dy = Math.sin(pose.tilt);
       for (let i = 0; i < 8; i++) {
         const along = (3.5 - i) * 0.064;
         const bend = Math.sin(time * 3.8 - i * 0.5 + worm.id) * 0.022;
         const taper = 1 - Math.abs(i - 3.5) * 0.11;
-        dummy.position.set(pose.x + dx * along - dy * bend,
-          Math.min(-0.045, pose.y + dy * along + dx * bend), 0);
+        dummy.position.set(x + dx * along - dy * bend,
+          Math.min(-0.045, y + dy * along + dx * bend), 0);
         dummy.rotation.z = pose.tilt;
         dummy.scale.set(0.11, 0.09 * taper, 0.075 * taper);
         dummy.updateMatrix();
@@ -1329,13 +1329,13 @@ export class ForestView {
     this.target = 0;
     const shirt = foliageColor(getSpecies("cinnamon")).getHex();
     const pants = foliageColor(getSpecies("oak")).getHex();
-    box(this.farmer, 0, 1.02, 0, 0.44, 0.6, 0.28, shirt);
+    box(this.farmer, 0, 0.88, 0, 0.44, 0.6, 0.28, shirt);
     const head = new T.Group();
-    head.position.y = 1.515;
+    head.position.y = 1.375;
     this.farmer.add(head);
     box(head, 0, 0, 0, 0.4, 0.4, 0.4, 0xd3ae86);
     const faceTexture = new T.TextureLoader().load(
-      window.POCKET_FOREST_FACE ?? "art/farmer-face.png",
+      window.POCKET_FOREST_FACE ?? "art/farmer-face.png?v=17-2",
       () => this.thumbnails?.clear(),
     );
     faceTexture.colorSpace = T.SRGBColorSpace;
@@ -1344,27 +1344,27 @@ export class ForestView {
     face.position.z = 0.201;
     head.add(face);
     box(head, 0, 0.146, 0, 0.424, 0.142, 0.424, 0x514034);
-    box(head, 0, 0.24, 0, 0.73, 0.09, 0.63, 0xd5ba76);
-    box(head, 0, 0.33, 0, 0.37, 0.12, 0.35, 0xbda16c);
+    box(head, 0, 0.205, 0, 0.73, 0.09, 0.63, 0xd5ba76);
+    box(head, 0, 0.295, 0, 0.37, 0.12, 0.35, 0xbda16c);
     this.legs = [];
     this.arms = [];
     for (const side of [-1, 1]) {
       const leg = new T.Group();
-      leg.position.set(side * 0.11, 0.72, 0);
+      leg.position.set(side * 0.11, 0.58, 0);
       this.farmer.add(leg);
-      box(leg, 0, -0.3, 0, 0.22, 0.6, 0.25, pants);
-      box(leg, 0, -0.665, 0.04, 0.24, 0.11, 0.33, 0x554c38);
+      box(leg, 0, -0.235, 0, 0.22, 0.47, 0.25, pants);
+      box(leg, 0, -0.525, 0.04, 0.24, 0.11, 0.33, 0x554c38);
       this.legs.push(leg);
       const arm = new T.Group();
-      arm.position.set(side * 0.32, 1.32, 0);
+      arm.position.set(side * 0.32, 1.18, 0);
       this.farmer.add(arm);
-      box(arm, 0, -0.26, 0, 0.20, 0.52, 0.24, 0xd3ae86);
+      box(arm, 0, -0.325, 0, 0.20, 0.65, 0.24, 0xd3ae86);
       this.arms.push(arm);
     }
-    box(this.farmer, 0, 1.024, 0.147, 0.028, 0.28, 0.012, 0xd5e4a2);
+    box(this.farmer, 0, 0.884, 0.147, 0.028, 0.28, 0.012, 0xd5e4a2);
     for (const [index, length] of [0.116, 0.086, 0.055].entries()) {
       for (const side of [-1, 1]) {
-        const branch = box(this.farmer, side * length * 0.36, 0.982 + index * 0.065, 0.147,
+        const branch = box(this.farmer, side * length * 0.36, 0.842 + index * 0.065, 0.147,
           0.023 - index * 0.004, length, 0.012, 0xd5e4a2);
         branch.rotation.z = -side * 0.92;
       }
@@ -1437,14 +1437,21 @@ export class ForestView {
     const origin = outlet.getWorldPosition(new T.Vector3());
     const direction = new T.Vector3(1, 0, 0)
       .applyQuaternion(outlet.getWorldQuaternion(new T.Quaternion()));
-    const width = water ? 0.085 : tool === "mulch" ? 0.16 : 0.125;
-    const color = water ? 0x69bce7 : tool === "compost" ? 0x463120 : 0xc79a56;
-    const mesh = box(this.scene, origin.x, origin.y, origin.z, width, width, width, color);
-    const speed = 0.82 + Math.random() * 0.36;
-    this.effects.push({
-      mesh, vx: direction.x * 0.86 * speed, vy: direction.y * 1.3 * speed, kind: tool, life: 3,
-    });
+    const mulch = tool === "mulch";
+    const count = water ? 6 : mulch ? 1 : 7;
+    const color = water ? 0x197ddd : mulch ? 0xc79a56 : 0x463120;
+    for (let i = 0; i < count; i++) {
+      const fraction = mulch ? 0.2 : i / (count - 1);
+      const size = (water ? 0.067 : mulch ? 0.16 : 0.10) * (0.8 + Math.random() * 0.4);
+      const mesh = box(this.scene, origin.x, origin.y, origin.z, size, size, size, color);
+      this.effects.push({
+        mesh, kind: tool, life: 3,
+        vx: direction.x * (0.42 + fraction * (water || mulch ? 3.9 : 6.7) + Math.random() * 0.27),
+        vy: direction.y * (0.65 + Math.random() * 0.8) + fraction * 0.24,
+      });
+    }
   }
+
   makeFauna() {
     this.insects = [];
     for (let i = 0; i < 10; i++) {
@@ -1722,7 +1729,7 @@ export class ForestView {
       }
     }
   }
-  render(dt, time, tool, pointer, applying) {
+  render(dt, time, tool, pointer, applying, simDay) {
     this.time = time;
     this.toolRoot.visible = !!tool;
     this.bag.visible = tool === "mulch" || tool === "compost";
@@ -1762,7 +1769,7 @@ export class ForestView {
       }
     }
     this.animateLeaves(dt, time);
-    this.animateWorms(dt, time);
+    this.animateWorms(dt, time, simDay);
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.life -= dt;
@@ -1784,11 +1791,11 @@ export class ForestView {
       if (e.kind === "weed") e.mesh.rotation.z += dt * 2;
       else e.mesh.rotation.z += dt;
       if (e.mesh.position.y <= 0.04) {
-        if (e.kind === "water" && Math.abs(e.mesh.position.x) < HALF)
+        if (e.kind === "water" && Math.abs(e.mesh.position.x) < MAP_HALF)
           this.pendingWater.push(e.mesh.position.x);
         if (e.kind === "mulch" && Math.abs(e.mesh.position.x) < HALF)
           this.pendingMulch.push(e.mesh.position.x);
-        if (e.kind === "compost" && Math.abs(e.mesh.position.x) < HALF)
+        if (e.kind === "compost" && Math.abs(e.mesh.position.x) < MAP_HALF)
           this.pendingCompost.push(e.mesh.position.x);
         if (e.kind === "weed" && e.life > 0) {
           e.vy = 0;

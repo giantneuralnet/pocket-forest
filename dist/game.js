@@ -1,11 +1,12 @@
-import { returnLeafToSoil, returnWeedToSoil, prepareSoilAt } from "./ecology.js";
 import { layers } from "./species.js";
 import {
+  returnLeafToSoil,
+  returnWeedToSoil,
+  prepareSoilAt,
   HALF,
   PLOT_FIRST,
   PLOT_END,
   COLS,
-  soilX,
   clamp,
   random,
   getSpecies,
@@ -20,8 +21,8 @@ import {
   TIME_RATES,
   packState,
   score,
-} from "./ecology.js";
-import { ForestView } from "./forest-view.js";
+} from "./ecology.js?v=17-2";
+import { ForestView } from "./forest-view.js?v=17-2";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -431,7 +432,7 @@ function updateUI() {
   }
   if (p === 1) {
     action(`${state.prep[0] ? "✓ " : ""}Drainage`, () => setTool("drainage"), tool === "drainage" ? "active-tool" : "").title =
-      "Loosen soil so water moves down through it faster.";
+      "Dry the surface now and let water drain downward faster.";
     action(`${state.prep[1] && state.prep[2] ? "✓ " : ""}Compost`, () => setTool("compost"), tool === "compost" ? "active-tool" : "");
     n.title = "Next · Buy & plant";
   }
@@ -597,6 +598,9 @@ function applyAt(point) {
   if (tool === "drainage") {
     prepareSoilAt(state, x, tool);
     view.digParticles(x, 0.13, 6);
+    view.updateSoil();
+    const sample = view.inspectSoil(pointer.x, pointer.y);
+    if (sample) showSoilTooltip(sample, pointer.x, pointer.y);
   } else {
     view.pour(tool, pointer);
   }
@@ -944,7 +948,7 @@ new ResizeObserver(([entry]) => {
 }).observe(farmerBubble);
 
 function placeFarmerBubble() {
-  const { x, y } = view.project(view.farmerX, 1.93, view.farmer.position.z);
+  const { x, y } = view.project(view.farmerX, 1.79, view.farmer.position.z);
   const visible = x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight;
   farmerBubble.style.visibility = visible ? "visible" : "hidden";
   if (!visible) return;
@@ -968,16 +972,7 @@ function frame(ms) {
   if (applying && tool && tool !== "drainage" && ms >= nextToolAt) {
     applyAt(view.worldPoint(pointer.x, pointer.y));
   }
-  for (const x of view.pendingWater.splice(0)) {
-    addWater(state, x, 6);
-    for (
-      let c = Math.max(0, colAt(x) - 1);
-      c <= Math.min(COLS - 1, colAt(x) + 1);
-      c++
-    ) {
-      if (c !== colAt(x)) addWater(state, soilX(c), 1.4);
-    }
-  }
+  for (const x of view.pendingWater.splice(0)) addWater(state, x, 2.2);
   for (const x of view.pendingMulch.splice(0)) {
     for (
       let c = Math.max(0, colAt(x) - 1);
@@ -1029,7 +1024,7 @@ function frame(ms) {
   }
   const renderStart = performance.now();
   const beforeWalk = view.farmerX;
-  view.render(dt, ms / 1000, tool, pointer, applying || ms < toolActionUntil);
+  view.render(dt, ms / 1000, tool, pointer, applying || ms < toolActionUntil, state.day + simAccumulator);
   sound.update(view, state, ms / 1000);
   if ([4, 6].includes(state.phase) && beforeWalk !== view.farmerX) {
     const left = Math.min(beforeWalk, view.farmerX) - 0.24;

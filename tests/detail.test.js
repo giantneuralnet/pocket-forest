@@ -9,6 +9,9 @@ import {
   TIME_RATES,
   rootThickness,
   stepWorms,
+  WORM_STEP_DAYS,
+  PLOT_FIRST,
+  PLOT_END,
   COLS,
   ROWS,
   CH,
@@ -118,10 +121,14 @@ test("soil preparation changes only the clicked area and compost stays near the 
   const c = colAt(0);
   prepareSoilAt(s, 0, "drainage");
   assert.ok(s.soil[c].d > before[c].d);
+  assert.equal(s.soil[c].m, before[c].m - 16);
+  assert.ok(s.soil[c + 1].m < before[c + 1].m);
   assert.equal(s.soil[0].d, before[0].d);
   prepareSoilAt(s, 0, "compost");
   assert.ok(s.soil[c].n > before[c].n);
   assert.ok(s.soil[c].c > before[c].c);
+  assert.equal(s.soil[c + 1].n, before[c + 1].n);
+  assert.equal(s.soil[COLS + c].n, before[COLS + c].n);
   assert.equal(s.soil[4 * COLS + c].n, before[4 * COLS + c].n);
   assert.equal(s.soil[0].n, before[0].n);
 });
@@ -150,10 +157,12 @@ test("worms seek a rich patch, then spread its nutrients without creating new on
   state.day = 17;
   const total = state.soil.reduce((sum, cell) => sum + cell.n, 0);
   stepWorms(state);
-  assert.equal(state.worms[0].col, 11);
-  assert.equal(state.worms[0].row, 1);
-  state.day++;
-  stepWorms(state);
+  assert.equal(state.worms[0].nextCol, 11);
+  assert.equal(state.worms[0].nextRow, 1);
+  for (let day = 18; day <= 17 + 2 * WORM_STEP_DAYS; day++) {
+    state.day = day;
+    stepWorms(state);
+  }
   assert.ok(rich.n < 90);
   assert.ok(state.soil.some(cell => cell !== rich && cell.n > 20));
   const restored = loadState(JSON.parse(packState(state)));
@@ -185,11 +194,46 @@ test("a worm keeps its horizontal heading across successive soil cells", () => {
   state.day = 17;
   stepWorms(state);
   const first = worm.col, direction = worm.dx;
-  for (let day = 18; day <= 22; day++) {
+  for (let day = 18; day <= 17 + 5 * WORM_STEP_DAYS; day++) {
     state.day = day;
     stepWorms(state);
     assert.equal(worm.dx, direction);
   }
   assert.equal(worm.col, first + direction * 5);
   assert.ok(worm.cargo < 0.5);
+});
+
+test("worms emerge in both woods and travel gradually into the planting bed", () => {
+  const state = freshState(42);
+  for (const cell of state.soil) { cell.m = 60; cell.n = 55; }
+  for (let day = 1; day <= 70; day++) {
+    state.day = day;
+    stepWorms(state);
+    if (day === 12) {
+      assert.ok(state.worms[0].col < PLOT_FIRST);
+      assert.equal(state.worms[0].nextCol, state.worms[0].col + 1);
+    }
+    if (day === 24) {
+      assert.ok(state.worms[1].col >= PLOT_END);
+      assert.equal(state.worms[1].nextCol, state.worms[1].col - 1);
+    }
+  }
+  assert.ok(state.worms.slice(0, 2).every(worm => worm.col >= PLOT_FIRST && worm.col < PLOT_END));
+});
+
+test("infiltrating water cannot move nutrients to neighboring cells", async () => {
+  const { hydrology, stepDay, addWater, colAt, prepareSoilAt } = await import("../dist/ecology.js");
+  const state = freshState(42);
+  const center = colAt(0);
+  for (const cell of state.soil) { cell.m = 45; cell.n = 20; }
+  prepareSoilAt(state, 0, "compost");
+  addWater(state, 0, 40);
+  for (let day = 0; day < 4; day++) {
+    hydrology(state, 0.4);
+    stepDay(state);
+  }
+  assert.ok(state.soil[center].n > 20);
+  assert.ok(state.soil[center + COLS].m > 45);
+  assert.equal(state.soil[center + COLS].n, 20);
+  assert.equal(state.soil[center + 1].n, 20);
 });
