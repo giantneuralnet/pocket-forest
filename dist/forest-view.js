@@ -419,7 +419,7 @@ export class ForestView {
     this.waterMesh = new T.InstancedMesh(
       boxGeometry,
       new T.MeshBasicMaterial({
-        color: 0x67b7de,
+        color: 0x4c99d6,
         transparent: true,
         opacity: 0.65,
       }),
@@ -1626,7 +1626,7 @@ export class ForestView {
       .applyQuaternion(outlet.getWorldQuaternion(new T.Quaternion()));
     const mulch = tool === "mulch";
     const count = water ? 6 : 7;
-    const color = water ? 0x197ddd : mulch ? 0xc79a56 : 0x463120;
+    const color = water ? 0x136acb : mulch ? 0xc79a56 : 0x463120;
     for (let i = 0; i < count; i++) {
       const fraction = i / (count - 1);
       const origin = water ? outlet.getWorldPosition(new T.Vector3()) :

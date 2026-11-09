@@ -24,7 +24,7 @@ import {
   packState,
   score,
 } from "./ecology.js?v=20";
-import { ForestView } from "./forest-view.js?v=25";
+import { ForestView } from "./forest-view.js?v=25-2";
 import { ForestAudio } from "./forest-audio.js?v=24";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
