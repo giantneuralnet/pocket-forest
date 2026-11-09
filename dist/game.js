@@ -122,9 +122,10 @@ function toast(text) {
   toastTimer = setTimeout(() => $("toast").classList.remove("show"), 5000);
 }
 let panelReturn = null;
-function panel(html, onClose = null) {
+function panel(html, onClose = null, theme = "") {
   panelReturn = onClose;
   $("panel").classList.remove("shop-panel", "survey-pending");
+  $("panel").classList.toggle("notebook-panel", theme === "notebook");
   $("panelContent").innerHTML = html;
   if (!$("panel").open) $("panel").showModal();
   hideTooltip();
@@ -267,10 +268,12 @@ function openNotebook() {
         })
         .join("") || "<p>Tap a plant to begin.</p>"
     }`,
+    null,
+    "notebook",
   );
   document
     .querySelectorAll("[data-note]")
-    .forEach(b => b.onclick = () => panel(entry(byId(b.dataset.note)), openNotebook));
+    .forEach(b => b.onclick = () => panel(entry(byId(b.dataset.note)), openNotebook, "notebook"));
 }
 $("notebook").onclick = openNotebook;
 function shop() {

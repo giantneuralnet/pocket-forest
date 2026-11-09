@@ -1027,3 +1027,13 @@ dialog.survey-pending, #tooltip.survey-pending {
 }
 dialog.survey-pending :is(p, i, .plant-height), #tooltip.survey-pending small { color: #c7d9ef; }
 dialog.survey-pending .badge:not(.exotic) { background: #2b4868; color: #e4f1fd; }
+
+dialog.notebook-panel {
+  color: #20372d;
+  background: #faf9f4 url("art/notebook-paper.avif") left top / 100% auto repeat-y local;
+  border-color: #b6bcb3;
+  padding: clamp(16px, 4vw, 26px);
+}
+dialog.notebook-panel #panelContent { padding-inline-start: 12%; }
+dialog.notebook-panel :is(p, small, i, .eyebrow, .plant-height) { color: #34473e; }
+dialog.notebook-panel .entry { border-color: #43596638; }
