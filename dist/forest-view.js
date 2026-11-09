@@ -33,6 +33,10 @@ const boxGeometry = new T.BoxGeometry(1, 1, 1),
   materialCache = new Map(),
   leafStamps = new Map();
 const lowerSoilHeight = 50, lowerSoilWidth = MAP_HALF * 2 + 3;
+const soilGrainSpan = 2.8;
+const pebbleGeometry = new T.IcosahedronGeometry(0.5);
+const pebblePalette = [0x746452, 0x584e43, 0x8a755b, 0x6a6459];
+const pebbleMaterial = new T.MeshBasicMaterial({ transparent: true, opacity: 0.63, depthWrite: false });
 const dogLegHeight = 0.51, dogRearZ = -0.53;
 const dogTorsoY = 0.63, dogTorsoZ = -0.17, dogTorsoHeight = 0.36, dogTorsoDepth = 0.94;
 const bagBounceHeight = 0.115;
@@ -1052,7 +1056,7 @@ export class ForestView {
     map.wrapS = map.wrapT = T.RepeatWrapping;
     map.magFilter = map.minFilter = T.NearestFilter;
     map.generateMipmaps = false;
-    const grainMaterial = new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false });
+    this.soilGrain = new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false });
     for (const [width, height, top, z] of [
       [MAP_HALF * 2, DEPTH, 0, 0.004],
       [lowerSoilWidth, lowerSoilHeight, -DEPTH, -0.02],
@@ -1062,19 +1066,18 @@ export class ForestView {
       for (let i = 0; i < uv.count; i++) {
         const x = (uv.getX(i) - 0.5) * width;
         const y = top + (uv.getY(i) - 1) * height;
-        uv.setXY(i, x / 2.8, y / 2.8);
+        uv.setXY(i, x / soilGrainSpan, y / soilGrainSpan);
       }
-      const grain = new T.Mesh(geometry, grainMaterial);
+      const grain = new T.Mesh(geometry, this.soilGrain);
       grain.position.set(0, top - height / 2, z);
       grain.renderOrder = -0.8;
       this.ground.add(grain);
     }
 
     const count = Math.round(MAP_HALF * DEPTH * 4);
-    const stones = new T.InstancedMesh(new T.IcosahedronGeometry(0.5),
-      new T.MeshBasicMaterial({ transparent: true, opacity: 0.63, depthWrite: false }), count);
+    const stones = new T.InstancedMesh(pebbleGeometry, pebbleMaterial, count);
     const dummy = new T.Object3D();
-    const palette = [0x746452, 0x584e43, 0x8a755b, 0x6a6459].map(hex => new T.Color(hex));
+    const palette = pebblePalette.map(hex => new T.Color(hex));
     for (let i = 0; i < count; i++) {
       const key = seed + i * 13 + 183;
       const width = 0.03 + random(key + 3) ** 2.5 * 0.48;
@@ -1800,12 +1803,45 @@ export class ForestView {
     }
   }
   digParticles(x, y, count) {
+    const color = new T.Color().setRGB(...soilColorRGB(sampleSoil(this.state, x, y)), T.SRGBColorSpace);
+    const soil = new T.MeshBasicMaterial({ color });
+    const dust = new T.MeshBasicMaterial({
+      color: color.clone().offsetHSL(0, -0.06, 0.13),
+      transparent: true, opacity: 0.55, depthWrite: false,
+    });
+    const grain = soilGeometry.clone();
+    const uv = grain.attributes.uv;
+    const width = CW / 4;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, (x + (uv.getX(i) - 0.5) * width) / soilGrainSpan,
+        (y + (uv.getY(i) - 0.5) * width) / soilGrainSpan);
+    }
+    const burst = { remaining: 0, soil, dust, grain };
+    const launch = (mesh, key, kind, vy, life) => {
+      const jitter = random(key) - 0.5;
+      mesh.position.set(x + jitter * 0.15, y + random(key + 1) * 0.08, 0.04);
+      this.scene.add(mesh);
+      this.effects.push({ mesh, vx: jitter * 2, vy, kind, life, floorY: y - 0.09, burst });
+      burst.remaining++;
+    };
     for (let i = 0; i < count; i++) {
-      const jitter = random(this.time + i) - 0.5;
-      const width = CW * (0.22 + random(i + 5) * 0.06);
-      const mesh = box(this.scene, x + jitter * 0.15, y + random(i) * 0.08,
-        0, width, width * 0.74, width * 0.55, 0x786049);
-      this.effects.push({ mesh, vx: jitter * 2, vy: 1.3 + random(i) * 0.6, kind: "dig", life: 3, floorY: y - 0.09 });
+      const chunk = new T.Group();
+      chunk.add(new T.Mesh(soilGeometry, soil));
+      const detail = new T.Mesh(grain, this.soilGrain);
+      detail.position.z = 0.015;
+      chunk.add(detail);
+      chunk.scale.setScalar(width * (0.9 + random(i + 5) * 0.2));
+      launch(chunk, this.time + i, "dig", 1.3 + random(i) * 0.6, 3);
+    }
+    for (let i = 0; i < 3; i++) {
+      const chip = new T.Mesh(pebbleGeometry, material(pebblePalette[i]));
+      chip.scale.set(width * (0.27 + random(i + 31) * 0.27), width * 0.3, width * 0.26);
+      launch(chip, this.time + 20 + i, "dig", 0.95 + random(i + 20) * 0.65, 2);
+    }
+    for (let i = 0; i < 9; i++) {
+      const mote = new T.Mesh(soilGeometry, dust);
+      mote.scale.setScalar(width * (0.13 + random(i + 48) * 0.16));
+      launch(mote, this.time + 40 + i, "dust", 0.65 + random(i + 40) * 0.9, 0.35 + random(i + 50) * 0.2);
     }
   }
   releaseLeaf(rec, release, time) {
@@ -1977,6 +2013,7 @@ export class ForestView {
       e.mesh.position.y += e.vy * dt;
       if (e.kind === "weed") e.mesh.rotation.z += dt * 2;
       else e.mesh.rotation.z += dt;
+      if (e.kind === "dust") e.mesh.scale.multiplyScalar(Math.exp(-3 * dt));
       if (e.mesh.position.y <= (e.floorY ?? 0.04)) {
         if (e.kind === "water" && Math.abs(e.mesh.position.x) < MAP_HALF)
           this.pendingWater.push(e.mesh.position.x);
@@ -1995,6 +2032,11 @@ export class ForestView {
       }
       if (e.life <= 0) {
         this.scene.remove(e.mesh);
+        if (e.burst && --e.burst.remaining === 0) {
+          e.burst.soil.dispose();
+          e.burst.dust.dispose();
+          e.burst.grain.dispose();
+        }
         this.effects.splice(i, 1);
       }
     }

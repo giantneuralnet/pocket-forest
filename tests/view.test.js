@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as T from "../dist/vendor/three.module.js";
 import { ForestView } from "../dist/forest-view.js";
+import { freshState, sampleSoil, soilColorRGB } from "../dist/ecology.js";
 function cameraView() {
   const v = Object.create(ForestView.prototype);
   v.element = {
@@ -53,6 +54,24 @@ test("the can pours right from outside either fence", () => {
     assert.equal(v.toolRoot.rotation.z, -0.52);
     assert.ok(v.effects.slice(-6).every(e => e.vx > 0 && e.mesh.position.x > x));
     assert.equal(v.effects.at(-1).mesh.material.color.getHex(), 0x4c99d6);
+  }
+});
+test("digging samples the clicked soil tile and reuses the ground grain", () => {
+  const v = Object.create(ForestView.prototype);
+  v.scene = new T.Scene();
+  v.state = freshState(42);
+  v.effects = [];
+  v.time = 1;
+  v.soilGrain = new T.MeshBasicMaterial();
+  for (const [x, y, m, n] of [[0, -0.4, 18, 65], [0, -2.4, 75, 65]]) {
+    const cell = Object.assign(sampleSoil(v.state, x, y), { m, n });
+    v.digParticles(x, y, 6);
+    const [chunk, ...rest] = v.effects;
+    const expected = new T.Color().setRGB(...soilColorRGB(cell), T.SRGBColorSpace);
+    assert.ok(chunk.mesh.children[0].material.color.equals(expected));
+    assert.equal(chunk.mesh.children[1].material, v.soilGrain);
+    assert.equal(rest.filter(effect => effect.kind === "dust").length, 9);
+    v.effects.length = 0;
   }
 });
 test("each bag releases once at the top of a vertical bounce", () => {

@@ -24,7 +24,7 @@ import {
   packState,
   score,
 } from "./ecology.js?v=26";
-import { ForestView } from "./forest-view.js?v=26";
+import { ForestView } from "./forest-view.js?v=27";
 import { ForestAudio } from "./forest-audio.js?v=24";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -639,8 +639,8 @@ function applyAt(point) {
   nextToolAt = now + interval;
   toolActionUntil = now + 210;
   if (tool === "drainage") {
-    prepareSoilAt(state, x, tool, y);
     view.digParticles(x, Math.min(0, y), 6);
+    prepareSoilAt(state, x, tool, y);
     view.updateSoil();
     const sample = view.inspectSoil(pointer.x, pointer.y);
     if (sample) showSoilTooltip(sample, pointer.x, pointer.y);
