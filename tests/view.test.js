@@ -37,6 +37,43 @@ test("two-axis panning moves the view horizontally and vertically", () => {
   assert.ok(v.center.x < 0);
   assert.ok(v.center.y > 6);
 });
+test("the can pours right from outside either fence", () => {
+  const v = Object.create(ForestView.prototype);
+  v.scene = new T.Scene();
+  v.toolRoot = new T.Group();
+  v.bag = new T.Group();
+  v.canOutlet = new T.Object3D();
+  v.canOutlet.position.set(0.435, 0.092, 0);
+  v.canOutlet.rotation.z = 0.24;
+  v.toolRoot.add(v.bag, v.canOutlet);
+  v.effects = [];
+  for (const x of [-8, 8]) {
+    v.pour("water", { x, y: 1 });
+    assert.equal(v.toolRoot.rotation.y, 0);
+    assert.equal(v.toolRoot.rotation.z, -0.52);
+    assert.ok(v.effects.slice(-6).every(e => e.vx > 0 && e.mesh.position.x > x));
+  }
+});
+test("each bag releases once at the top of a vertical bounce", () => {
+  const v = Object.create(ForestView.prototype);
+  v.toolRoot = new T.Group();
+  v.bag = new T.Group();
+  const bursts = [];
+  v.emitPour = tool => bursts.push({ tool, offset: v.bag.position.y });
+  const point = { x: -8, y: 1 };
+  for (const tool of ["compost", "mulch"]) {
+    v.pour(tool, point, 0, 1);
+    const rising = v.updateBagBounce(tool, point, 0.25);
+    assert.equal(bursts.length, 0);
+    const crest = v.updateBagBounce(tool, point, 0.5);
+    assert.ok(crest > rising && rising > 0);
+    assert.deepEqual(bursts, [{ tool, offset: crest }]);
+    assert.equal(v.toolRoot.rotation.z, 0);
+    assert.equal(v.updateBagBounce(tool, point, 1), 0);
+    assert.equal(bursts.length, 1);
+    bursts.length = 0;
+  }
+});
 test("the dog returns to visible ground without changing the camera", () => {
   const v = cameraView();
   v.zoom = 5;

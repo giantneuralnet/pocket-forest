@@ -24,7 +24,7 @@ import {
   packState,
   score,
 } from "./ecology.js?v=20";
-import { ForestView } from "./forest-view.js?v=21";
+import { ForestView } from "./forest-view.js?v=23";
 import { ForestAudio } from "./forest-audio.js";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
@@ -596,7 +596,9 @@ function applyAt(point) {
   const { x, y } = point;
   const now = performance.now();
   const digging = tool === "drainage";
-  if (Math.abs(x) > (digging ? MAP_HALF : HALF) || now < nextToolAt) return;
+  const bag = tool === "mulch" || tool === "compost";
+  if (Math.abs(x) > MAP_HALF || now < nextToolAt) return;
+  if (bag && view.bagBounce && !view.bagBounce.emitted) return;
   if (digging && (y > 0.12 || y <= -DEPTH || view.cameraMove)) return;
   if (tool === "drainage" && !state.prep[0]) {
     if (state.budget < 400) { toast("Drainage costs ¥400."); return; }
@@ -617,7 +619,8 @@ function applyAt(point) {
     return;
   }
   state.budget -= price;
-  nextToolAt = now + (tool === "mulch" ? 320 : tool === "compost" ? 140 : 105);
+  const interval = tool === "mulch" ? 320 : tool === "compost" ? 140 : 105;
+  nextToolAt = now + interval;
   toolActionUntil = now + 210;
   if (tool === "drainage") {
     prepareSoilAt(state, x, tool, y);
@@ -626,7 +629,7 @@ function applyAt(point) {
     const sample = view.inspectSoil(pointer.x, pointer.y);
     if (sample) showSoilTooltip(sample, pointer.x, pointer.y);
   } else {
-    view.pour(tool, pointer);
+    view.pour(tool, point, now / 1000, interval / 1000);
   }
   view.target = x;
   updateStats();
@@ -764,7 +767,7 @@ world.addEventListener("pointerdown", (e) => {
     view.updateGhosts();
     updateSelection();
   }
-  if (tool && (tool === "drainage" || Math.abs(point.x) <= HALF)) {
+  if (tool && Math.abs(point.x) <= MAP_HALF) {
     applying = true;
     applyAt(point);
   }

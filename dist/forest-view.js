@@ -35,6 +35,7 @@ const boxGeometry = new T.BoxGeometry(1, 1, 1),
 const lowerSoilHeight = 50, lowerSoilWidth = MAP_HALF * 2 + 3;
 const dogLegHeight = 0.51, dogRearZ = -0.53;
 const dogTorsoY = 0.63, dogTorsoZ = -0.17, dogTorsoHeight = 0.36, dogTorsoDepth = 0.94;
+const bagBounceHeight = 0.115;
 const flowerGeometry = new T.PlaneGeometry(1, 1);
 const fruitGeometry = new T.SphereGeometry(0.5, 10, 8);
 const flowersBySpecies = new Map();
@@ -1589,24 +1590,35 @@ export class ForestView {
     this.canOutlet.rotation.z = spout.rotation.z;
     this.can.add(this.canOutlet);
   }
-  positionTool(tool, pointer, applying) {
-    const p = this.worldPoint(pointer.x, pointer.y);
-    this.toolRoot.position.set(p.x, p.y);
+  positionTool(tool, point, applying, bounce = 0) {
+    this.toolRoot.position.set(point.x, point.y, 0);
     this.toolRoot.rotation.z = tool === "drainage" ? (applying ? -0.65 : -0.28)
-      : applying ? -0.74 : 0;
-    this.toolRoot.rotation.y = tool !== "drainage" && p.x < 0 ? Math.PI : 0;
-    this.toolRoot.rotation.order = "YXZ";
-    const shaking = applying && (tool === "compost" || tool === "mulch");
-    const shake = shaking ? Math.sin(this.time * 44) : 0;
-    this.bag.position.set(shake * 0.034, Math.abs(shake) * 0.045, 0);
-    this.bag.rotation.z = shake * 0.13;
-    for (const label of Object.values(this.bagLabels)) {
-      label.position.z = this.toolRoot.rotation.y ? -0.172 : 0.172;
-      label.rotation.y = this.toolRoot.rotation.y;
+      : tool === "water" ? -0.52 : 0;
+    this.bag.position.y = bounce;
+  }
+  pour(tool, point, time, duration) {
+    if (tool === "water") {
+      this.positionTool(tool, point, true);
+      this.emitPour(tool);
+    } else {
+      this.bagBounce = { tool, point, time, duration, emitted: false };
     }
   }
-  pour(tool, pointer) {
-    this.positionTool(tool, pointer, true);
+  updateBagBounce(tool, point, time) {
+    const bounce = this.bagBounce;
+    if (!bounce) return 0;
+    const progress = clamp((time - bounce.time) / bounce.duration);
+    const active = tool === bounce.tool;
+    if (!bounce.emitted && progress >= 0.5) {
+      this.positionTool(bounce.tool, active && Math.abs(point.x) <= MAP_HALF ? point : bounce.point,
+        true, bagBounceHeight);
+      this.emitPour(bounce.tool);
+      bounce.emitted = true;
+    }
+    if (progress === 1) this.bagBounce = null;
+    return active && progress < 1 ? Math.sin(progress * Math.PI) * bagBounceHeight : 0;
+  }
+  emitPour(tool) {
     const water = tool === "water";
     const outlet = water ? this.canOutlet : this.bag;
     const direction = new T.Vector3(1, 0, 0)
@@ -1623,7 +1635,8 @@ export class ForestView {
       this.effects.push({
         mesh, kind: tool, life: 3,
         vx: direction.x * (0.42 + fraction * (water ? 3.9 : 6.7) + Math.random() * 0.27),
-        vy: direction.y * (0.65 + Math.random() * 0.8) + fraction * 0.24,
+        vy: water ? direction.y * (0.65 + Math.random() * 0.8) + fraction * 0.24
+          : 0.2 + Math.random() * 0.35 + fraction * 0.24,
       });
     }
   }
@@ -1919,7 +1932,9 @@ export class ForestView {
     this.can.visible = tool === "water";
     this.animateCamera(time);
     this.keepDogInView();
-    if (tool) this.positionTool(tool, pointer, applying);
+    const toolPoint = tool ? this.worldPoint(pointer.x, pointer.y) : null;
+    const bounce = this.updateBagBounce(tool, toolPoint, time);
+    if (tool) this.positionTool(tool, toolPoint, applying, bounce);
     const delta = this.target - this.farmerX;
     const step = Math.sign(delta) * Math.min(Math.abs(delta), dt * 2.8);
     this.farmerX += step;
