@@ -1595,6 +1595,7 @@ export class ForestView {
     this.toolRoot.rotation.z = tool === "drainage" ? (applying ? -0.65 : -0.28)
       : tool === "water" ? -0.52 : 0;
     this.bag.position.y = bounce;
+    this.bag.rotation.z = bounce > 0 ? -Math.PI / 4 : 0;
   }
   pour(tool, point, time, duration) {
     if (tool === "water") {

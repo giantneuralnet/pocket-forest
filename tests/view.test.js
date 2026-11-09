@@ -56,22 +56,26 @@ test("the can pours right from outside either fence", () => {
 });
 test("each bag releases once at the top of a vertical bounce", () => {
   const v = Object.create(ForestView.prototype);
+  v.scene = new T.Scene();
   v.toolRoot = new T.Group();
   v.bag = new T.Group();
-  const bursts = [];
-  v.emitPour = tool => bursts.push({ tool, offset: v.bag.position.y });
+  v.toolRoot.add(v.bag);
+  v.effects = [];
   const point = { x: -8, y: 1 };
   for (const tool of ["compost", "mulch"]) {
     v.pour(tool, point, 0, 1);
     const rising = v.updateBagBounce(tool, point, 0.25);
-    assert.equal(bursts.length, 0);
+    assert.equal(v.effects.length, 0);
     const crest = v.updateBagBounce(tool, point, 0.5);
     assert.ok(crest > rising && rising > 0);
-    assert.deepEqual(bursts, [{ tool, offset: crest }]);
+    assert.equal(v.bag.position.y, crest);
+    assert.equal(v.bag.rotation.z, -Math.PI / 4);
     assert.equal(v.toolRoot.rotation.z, 0);
+    assert.equal(v.effects.length, 7);
+    assert.ok(v.effects.every(effect => effect.kind === tool && effect.vx > 0 && effect.vx < 5.25));
     assert.equal(v.updateBagBounce(tool, point, 1), 0);
-    assert.equal(bursts.length, 1);
-    bursts.length = 0;
+    assert.equal(v.effects.length, 7);
+    v.effects.length = 0;
   }
 });
 test("the dog returns to visible ground without changing the camera", () => {
