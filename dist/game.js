@@ -23,8 +23,8 @@ import {
   TIME_RATES,
   packState,
   score,
-} from "./ecology.js?v=26";
-import { ForestView } from "./forest-view.js?v=27";
+} from "./ecology.js?v=27";
+import { ForestView } from "./forest-view.js?v=27-2";
 import { ForestAudio } from "./forest-audio.js?v=24";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;

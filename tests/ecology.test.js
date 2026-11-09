@@ -143,7 +143,7 @@ test("saves from before the map grid start a fresh forest", () => {
   const legacy = { ...current, version: current.version - 1, phase: 5, budget: 3400, plants: [plant(1)] };
   const state = loadState(legacy);
   assert.equal(state.phase, 0);
-  assert.equal(state.budget, 18000);
+  assert.equal(state.budget, 36000);
   assert.deepEqual(state.plants, []);
   assert.equal(state.soil.length, COLS * ROWS);
 });

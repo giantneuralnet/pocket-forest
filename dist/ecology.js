@@ -85,7 +85,7 @@ export function freshState(soilSeed = Math.floor(Math.random() * 1e7)) {
   return {
     version: SAVE_VERSION,
     phase: 0,
-    budget: 18000,
+    budget: 36000,
     reachedPhase: 0,
     survey: [],
     surveyPlants: [],

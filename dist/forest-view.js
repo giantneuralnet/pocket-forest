@@ -24,7 +24,7 @@ import {
   WORM_LIMIT,
   WORM_STEP_DAYS,
   rootThickness,
-} from "./ecology.js?v=26";
+} from "./ecology.js?v=27";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
