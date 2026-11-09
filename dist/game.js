@@ -25,7 +25,7 @@ import {
   score,
 } from "./ecology.js?v=20";
 import { ForestView } from "./forest-view.js?v=23";
-import { ForestAudio } from "./forest-audio.js";
+import { ForestAudio } from "./forest-audio.js?v=24";
 const $ = (id) => document.getElementById(id),
   byId = getSpecies;
 let state;
@@ -46,18 +46,17 @@ try {
 for (const type of ["pointerdown", "keydown", "wheel"])
   window.addEventListener(type, () => view.noteActivity(), { passive: true });
 const sound = new ForestAudio();
-$("sound").onclick = async () => {
-  const enabled = !sound.enabled;
-  $("sound").disabled = true;
-  try {
-    await sound.setEnabled(enabled);
-  } catch {
+const soundButton = $("sound");
+function updateSoundButton() {
+  soundButton.setAttribute("aria-pressed", String(sound.enabled));
+  soundButton.title = sound.enabled ? "Turn sound off" : "Turn sound on";
+}
+soundButton.onclick = () => {
+  sound.setEnabled(!sound.enabled).catch(() => {
+    updateSoundButton();
     toast("Forest audio could not load.");
-  } finally {
-    $("sound").disabled = false;
-    $("sound").setAttribute("aria-pressed", String(sound.enabled));
-    $("sound").title = sound.enabled ? "Turn sound off" : "Turn sound on";
-  }
+  });
+  updateSoundButton();
 };
 let framePeak = 0,
   frameCount = 0,
@@ -122,16 +121,35 @@ function toast(text) {
   toastTimer = setTimeout(() => $("toast").classList.remove("show"), 5000);
 }
 let panelReturn = null;
-function panel(html, onClose = null, theme = "") {
+const dialog = $("panel");
+function panel(html, onClose = null) {
   panelReturn = onClose;
-  $("panel").classList.remove("shop-panel", "survey-pending");
-  $("panel").classList.toggle("notebook-panel", theme === "notebook");
+  dialog.classList.remove("shop-panel", "survey-pending");
   $("panelContent").innerHTML = html;
-  if (!$("panel").open) $("panel").showModal();
+  if (!dialog.open) dialog.showModal();
   hideTooltip();
 }
-$("closePanel").onclick = () => $("panel").close();
-$("panel").addEventListener("close", () => {
+$("closePanel").onclick = () => dialog.close();
+let backdropPress = false;
+function onBackdrop(event) {
+  if (event.target !== dialog) return false;
+  const { left, top, right, bottom } = dialog.getBoundingClientRect();
+  return event.clientX < left || event.clientX > right ||
+    event.clientY < top || event.clientY > bottom;
+}
+dialog.addEventListener("pointerdown", event => {
+  backdropPress = onBackdrop(event);
+});
+dialog.addEventListener("pointercancel", () => { backdropPress = false; });
+dialog.addEventListener("click", event => {
+  const dismiss = backdropPress && onBackdrop(event);
+  backdropPress = false;
+  if (dismiss) {
+    panelReturn = null;
+    dialog.close();
+  }
+});
+dialog.addEventListener("close", () => {
   const back = panelReturn;
   panelReturn = null;
   back?.();
@@ -268,12 +286,10 @@ function openNotebook() {
         })
         .join("") || "<p>Tap a plant to begin.</p>"
     }`,
-    null,
-    "notebook",
   );
   document
     .querySelectorAll("[data-note]")
-    .forEach(b => b.onclick = () => panel(entry(byId(b.dataset.note)), openNotebook, "notebook"));
+    .forEach(b => b.onclick = () => panel(entry(byId(b.dataset.note)), openNotebook));
 }
 $("notebook").onclick = openNotebook;
 function shop() {

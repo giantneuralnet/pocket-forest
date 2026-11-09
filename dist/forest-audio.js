@@ -1,4 +1,4 @@
-const clips = ["wind", "crickets", "bird", "bee"];
+const windLevel = 2.3;
 
 export class ForestAudio {
   constructor() {
@@ -7,38 +7,57 @@ export class ForestAudio {
     this.loops = {};
     this.nextCall = { bird: 0, bee: 0 };
     this.nextMix = 0;
+    this.revision = 0;
+    this.windData = this.fetchClip("wind").catch(() => null);
   }
 
   async setEnabled(enabled) {
+    const revision = ++this.revision;
     this.enabled = enabled;
     if (!enabled) {
-      await this.context?.suspend();
+      if (this.master) this.master.gain.value = 0;
       return;
     }
     try {
       if (!this.context) {
-        this.context = new AudioContext();
+        const Context = window.AudioContext ?? window.webkitAudioContext;
+        this.context = new Context();
         this.master = this.context.createGain();
-        this.master.gain.value = 0.55;
         this.master.connect(this.context.destination);
       }
-      await this.context.resume();
-      this.loading ??= Promise.all(clips.map(async name => {
-        const url = window.POCKET_FOREST_AUDIO?.[name] ?? `audio/${name}.mp3`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Could not load ${name}`);
-        this.buffers[name] = await this.context.decodeAudioData(await response.arrayBuffer());
-      }));
-      await this.loading;
-      if (!this.loops.wind) {
-        this.loops.wind = this.play("wind", { loop: true, level: 0.18 });
-        this.loops.crickets = this.play("crickets", { loop: true, level: 0 });
-      }
+      this.master.gain.value = 0.55;
+      const resumed = this.context.state === "running" ? undefined : this.context.resume();
+      this.loading ??= this.loadWind().catch(error => {
+        this.loading = null;
+        throw error;
+      });
+      await Promise.all([resumed, this.loading]);
     } catch (error) {
-      this.loading = null;
+      if (revision !== this.revision) return;
       this.enabled = false;
-      await this.context?.suspend();
+      if (this.master) this.master.gain.value = 0;
       throw error;
+    }
+  }
+
+  async fetchClip(name) {
+    const url = window.POCKET_FOREST_AUDIO?.[name] ?? `audio/${name}.mp3`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Could not load ${name}`);
+    return response.arrayBuffer();
+  }
+
+  async loadWind() {
+    const prefetched = this.windData;
+    this.windData = null;
+    const data = await prefetched ?? await this.fetchClip("wind");
+    this.buffers.wind = await this.context.decodeAudioData(data);
+    this.loops.wind = this.play("wind", { loop: true, level: windLevel });
+    for (const name of ["crickets", "bird", "bee"]) {
+      this.fetchClip(name).then(data => this.context.decodeAudioData(data)).then(buffer => {
+        this.buffers[name] = buffer;
+        if (name === "crickets") this.loops.crickets = this.play(name, { loop: true, level: 0 });
+      }).catch(() => {});
     }
   }
 
@@ -79,10 +98,10 @@ export class ForestAudio {
     const diversity = Math.min(1, habitat / 6) * Math.min(1, species.size / 3);
     const warm = state.day % 365 >= 55 && state.day % 365 < 260;
     const now = this.context.currentTime;
-    this.loops.wind.setTargetAtTime(0.15 + Math.abs(view.wind) * 3, now, 0.5);
-    this.loops.crickets.setTargetAtTime((warm ? 0.16 : 0.025) * diversity, now, 1.2);
+    this.loops.wind.setTargetAtTime(windLevel + Math.abs(view.wind) * 8, now, 0.5);
+    this.loops.crickets?.setTargetAtTime((warm ? 0.16 : 0.025) * diversity, now, 1.2);
     for (const [name, creatures] of [["bird", view.birds], ["bee", view.insects.slice(0, 7)]]) {
-      if (time < this.nextCall[name]) continue;
+      if (!this.buffers[name] || time < this.nextCall[name]) continue;
       const visible = [];
       for (const { g } of creatures) {
         if (!g.visible) continue;
