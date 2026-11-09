@@ -10,6 +10,7 @@ import {
   rootThickness,
   stepWorms,
   WORM_STEP_DAYS,
+  WORM_LIMIT,
   PLOT_FIRST,
   PLOT_END,
   COLS,
@@ -151,13 +152,14 @@ test("live roots draw moisture from the soil cells along their paths", async () 
 test("worms seek a rich patch, then spread its nutrients without creating new ones", () => {
   const state = freshState();
   for (const cell of state.soil) cell.n = 20;
-  const rich = state.soil[COLS + 11];
+  const col = PLOT_FIRST + 5;
+  const rich = state.soil[COLS + col + 1];
   rich.n = 90;
-  state.worms.push({ id: 1, col: 10, row: 1, cargo: 0 });
+  state.worms.push({ id: 1, col, row: 1, cargo: 0 });
   state.day = 17;
   const total = state.soil.reduce((sum, cell) => sum + cell.n, 0);
   stepWorms(state);
-  assert.equal(state.worms[0].nextCol, 11);
+  assert.equal(state.worms[0].nextCol, col + 1);
   assert.equal(state.worms[0].nextRow, 1);
   for (let day = 18; day <= 17 + 2 * WORM_STEP_DAYS; day++) {
     state.day = day;
@@ -189,7 +191,7 @@ test("one seeded square grid gets wetter and richer with depth across the map", 
 
 test("a worm keeps its horizontal heading across successive soil cells", () => {
   const state = freshState(20);
-  const worm = { id: 1, col: 24, row: 3, cargo: 1.8 };
+  const worm = { id: 1, col: PLOT_FIRST + 9, row: 3, cargo: 1.8 };
   state.worms.push(worm);
   state.day = 17;
   stepWorms(state);
@@ -219,6 +221,36 @@ test("worms emerge in both woods and travel gradually into the planting bed", ()
     }
   }
   assert.ok(state.worms.slice(0, 2).every(worm => worm.col >= PLOT_FIRST && worm.col < PLOT_END));
+});
+
+test("ten worms move across soil layers and keep spreading nutrients in free growth", async () => {
+  const { stepDay } = await import("../dist/ecology.js");
+  const state = freshState(42);
+  state.phase = 4;
+  for (const cell of state.soil) { cell.m = 60; cell.n = 55; }
+  for (let day = 1; day <= 250; day++) {
+    state.day = day;
+    stepWorms(state);
+  }
+  assert.equal(state.worms.length, 10);
+  assert.equal(state.worms.length, WORM_LIMIT);
+  assert.ok(state.worms.every(worm => worm.col >= PLOT_FIRST && worm.col < PLOT_END));
+  state.phase = 6;
+  const continued = loadState(JSON.parse(packState(state)));
+  const ids = continued.worms.map(worm => worm.id);
+  const directions = new Set();
+  const rows = new Set();
+  for (let day = 0; day < 120; day++) {
+    stepDay(continued);
+    for (const worm of continued.worms) {
+      directions.add(Math.sign(worm.dy));
+      rows.add(worm.row);
+    }
+  }
+  assert.deepEqual(continued.worms.map(worm => worm.id), ids);
+  assert.ok(directions.has(-1) && directions.has(1));
+  assert.ok(rows.has(0) && rows.has(ROWS - 1));
+  assert.ok(continued.worms.every(worm => worm.col >= PLOT_FIRST && worm.col < PLOT_END));
 });
 
 test("infiltrating water cannot move nutrients to neighboring cells", async () => {

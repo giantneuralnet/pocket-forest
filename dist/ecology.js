@@ -357,8 +357,7 @@ export function returnWeedToSoil(s, weed) {
     cell.litter += (1.5 + (weed.biomass || 0.5)) * (1 - Math.abs(offset) * 0.2);
   }
 }
-export const WORM_LIMIT = 8;
-const wormRows = ROWS - 1;
+export const WORM_LIMIT = 10;
 export const WORM_STEP_DAYS = 10;
 export function stepWorms(state) {
   const { worms, soil, day } = state;
@@ -389,7 +388,10 @@ export function stepWorms(state) {
       target.n += deposit;
       worm.cargo -= deposit;
     }
-    if ((worm.inward === 1 && worm.col >= PLOT_FIRST + 1) ||
+    // Bring wandering worms from older saves back to the bed.
+    if (worm.col < PLOT_FIRST) worm.inward = 1;
+    else if (worm.col >= PLOT_END) worm.inward = -1;
+    else if ((worm.inward === 1 && worm.col >= PLOT_FIRST + 1) ||
         (worm.inward === -1 && worm.col <= PLOT_END - 2)) {
       delete worm.inward;
       worm.turnDay = day;
@@ -401,30 +403,39 @@ export function stepWorms(state) {
       worm.cargo += load;
     }
     const key = day * 13.7 + worm.id * 9.1;
-    const atEdge = worm.col + worm.dx < 0 || worm.col + worm.dx >= COLS;
+    const inPlot = worm.col >= PLOT_FIRST && worm.col < PLOT_END;
+    const left = inPlot ? PLOT_FIRST : 0, right = inPlot ? PLOT_END : COLS;
+    const atEdge = worm.col + worm.dx < left || worm.col + worm.dx >= right;
     const chooseHeading = !worm.turnDay || day >= worm.turnDay || atEdge;
+    let forageDy = 0;
     if (worm.inward) {
       worm.heading = worm.inward;
-      worm.slope = random(key + 9) < 0.5 ? -1 : 1;
     } else if (chooseHeading) {
       let best = -Infinity;
       for (const dx of [-1, 1])
         for (const dy of [-1, 0, 1]) {
           const col = worm.col + dx, row = worm.row + dy;
-          if (col < 0 || col >= COLS || row < 0 || row >= wormRows) continue;
+          if (col < left || col >= right || row < 0 || row >= ROWS) continue;
           const noise = random(key + row * 33 + col * 1.9);
           const forage = worm.cargo === 0 ? (soil[row * COLS + col].n - source.n) * 0.05 : 0;
           const weight = noise + forage - Math.abs(dy) * 0.25 + (dx === worm.dx ? 0.18 : 0);
           if (weight <= best) continue;
           best = weight;
           worm.heading = dx;
-          worm.slope = dy;
+          forageDy = dy;
         }
       worm.turnDay = day + WORM_STEP_DAYS * (6 + Math.floor(random(key + 10) * 5));
     }
-    const dy = (!worm.inward && chooseHeading && worm.cargo === 0) || random(key + 20) < 0.24
-      ? worm.slope : 0;
-    worm.nextRow = clamp(worm.row + dy, 0, wormRows - 1);
+    const seekingFood = !worm.inward && chooseHeading && worm.cargo === 0;
+    if (!seekingFood && random(key + 20) < (worm.inward ? 0.35 : 0.68)) {
+      if (worm.row === 0) worm.slope = 1;
+      else if (worm.row === ROWS - 1) worm.slope = -1;
+      else if (!worm.slope || random(key + 21) < 0.13)
+        worm.slope = random(key + 22) < 0.5 ? -1 : 1;
+      worm.nextRow = worm.row + worm.slope;
+    } else {
+      worm.nextRow = worm.row + (seekingFood ? forageDy : 0);
+    }
     worm.dx = worm.heading;
     worm.dy = worm.nextRow - worm.row;
     worm.nextCol = worm.col + worm.dx;

@@ -24,7 +24,7 @@ import {
   WORM_LIMIT,
   WORM_STEP_DAYS,
   rootThickness,
-} from "./ecology.js?v=20";
+} from "./ecology.js?v=26";
 const taperedGeometry = new T.CylinderGeometry(0.36, 0.5, 1, 6),
   rootGeometry = new T.CylinderGeometry(0.94, 1, 1, 7),
   soilGeometry = new T.PlaneGeometry(1, 1);
@@ -36,6 +36,7 @@ const lowerSoilHeight = 50, lowerSoilWidth = MAP_HALF * 2 + 3;
 const dogLegHeight = 0.51, dogRearZ = -0.53;
 const dogTorsoY = 0.63, dogTorsoZ = -0.17, dogTorsoHeight = 0.36, dogTorsoDepth = 0.94;
 const bagBounceHeight = 0.115;
+const waterMaterial = new T.MeshBasicMaterial({ color: 0x4c99d6, transparent: true, opacity: 0.65 });
 const flowerGeometry = new T.PlaneGeometry(1, 1);
 const fruitGeometry = new T.SphereGeometry(0.5, 10, 8);
 const flowersBySpecies = new Map();
@@ -418,11 +419,7 @@ export class ForestView {
     this.scene.add(this.mulchMesh);
     this.waterMesh = new T.InstancedMesh(
       boxGeometry,
-      new T.MeshBasicMaterial({
-        color: 0x4c99d6,
-        transparent: true,
-        opacity: 0.65,
-      }),
+      waterMaterial,
       COLS,
     );
     this.scene.add(this.waterMesh);
@@ -1148,7 +1145,7 @@ export class ForestView {
       const col = worm.col + ((worm.nextCol ?? worm.col) - worm.col) * progress;
       const row = worm.row + ((worm.nextRow ?? worm.row) - worm.row) * progress;
       const x = soilX(col), y = -(row + 0.5) * CH;
-      const tilt = -0.32 * (worm.dy || 0) * (worm.dx || 1);
+      const tilt = -Math.PI / 4 * (worm.dy || 0) * (worm.dx || 1);
       let pose = this.wormPoses.get(worm.id);
       if (!pose) {
         pose = { tilt };
@@ -1595,7 +1592,8 @@ export class ForestView {
     this.toolRoot.rotation.z = tool === "drainage" ? (applying ? -0.65 : -0.28)
       : tool === "water" ? -0.52 : 0;
     this.bag.position.y = bounce;
-    this.bag.rotation.z = bounce > 0 ? -Math.PI / 4 : 0;
+    const pouringBag = (tool === "compost" || tool === "mulch") && (applying || bounce > 0);
+    this.bag.rotation.z = pouringBag ? -Math.PI / 4 : 0;
   }
   pour(tool, point, time, duration) {
     if (tool === "water") {
@@ -1626,13 +1624,16 @@ export class ForestView {
       .applyQuaternion(outlet.getWorldQuaternion(new T.Quaternion()));
     const mulch = tool === "mulch";
     const count = water ? 6 : 7;
-    const color = water ? 0x136acb : mulch ? 0xc79a56 : 0x463120;
+    const particleMaterial = water ? waterMaterial : material(mulch ? 0xc79a56 : 0x463120);
     for (let i = 0; i < count; i++) {
       const fraction = i / (count - 1);
       const origin = water ? outlet.getWorldPosition(new T.Vector3()) :
         outlet.localToWorld(new T.Vector3((fraction - 0.5) * 0.56, 0.412, (Math.random() - 0.5) * 0.17));
       const size = (water ? 0.067 : mulch ? 0.125 : 0.10) * (0.8 + Math.random() * 0.4);
-      const mesh = box(this.scene, origin.x, origin.y, origin.z, size, size, size, color);
+      const mesh = new T.Mesh(boxGeometry, particleMaterial);
+      mesh.position.copy(origin);
+      mesh.scale.setScalar(size);
+      this.scene.add(mesh);
       this.effects.push({
         mesh, kind: tool, life: 3,
         vx: direction.x * (0.42 + fraction * (water ? 3.9 : 6.7) + Math.random() * 0.27),

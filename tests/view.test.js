@@ -52,6 +52,7 @@ test("the can pours right from outside either fence", () => {
     assert.equal(v.toolRoot.rotation.y, 0);
     assert.equal(v.toolRoot.rotation.z, -0.52);
     assert.ok(v.effects.slice(-6).every(e => e.vx > 0 && e.mesh.position.x > x));
+    assert.equal(v.effects.at(-1).mesh.material.color.getHex(), 0x4c99d6);
   }
 });
 test("each bag releases once at the top of a vertical bounce", () => {
@@ -74,6 +75,8 @@ test("each bag releases once at the top of a vertical bounce", () => {
     assert.equal(v.effects.length, 7);
     assert.ok(v.effects.every(effect => effect.kind === tool && effect.vx > 0 && effect.vx < 5.25));
     assert.equal(v.updateBagBounce(tool, point, 1), 0);
+    v.positionTool(tool, point, true, 0);
+    assert.equal(v.bag.rotation.z, -Math.PI / 4);
     assert.equal(v.effects.length, 7);
     v.effects.length = 0;
   }
