@@ -2,6 +2,8 @@
 
 A full-screen browser game with a fixed, lightly elevated perspective camera inspired by the Miyawaki method. Survey the surrounding woodland, prepare living soil, buy and arrange seedlings, mulch and water the bed, and tend a small forest through a three-year review.
 
+[Play Pocket Forest](https://giantneuralnet.github.io/pocket-forest/)
+
 ## Run
 
 `python3 -m http.server 8000 --directory dist`, then open http://localhost:8000. The website is entirely static, with a vendored Three.js library and no API keys or runtime network dependencies. Serve through HTTP rather than opening index.html with file://.
@@ -48,9 +50,9 @@ Progress is saved locally on the browser/origin. Version-one saves migrate to th
 
 ## GitHub Pages and license
 
-`.github/workflows/pages.yml` deploys `dist/` after the repository's Pages publishing source is set to GitHub Actions. All asset URLs are relative, so the site works under a repository subpath. The `.openai/hosting.json` manifest is only for the current private Sites hosting and is not required for GitHub Pages.
+`.github/workflows/pages.yml` publishes `dist/` to [GitHub Pages](https://giantneuralnet.github.io/pocket-forest/) when changes reach `main`. All asset URLs are relative, so the site works under the repository subpath. The `.openai/hosting.json` manifest configures the additional Sites deployment.
 
-Original game code is MIT licensed. Three.js includes its MIT notice. User-supplied photographs in `dist/photos/` are excluded from the code license; obtain permission to redistribute them publicly or replace/remove them before a public release. Photo identifications remain tentative, with uncertainty shown in the notebook. Southern crabgrass and horseweed are additional named weed references, not identifications from the supplied photos. Southern crabgrass native status is left unassigned here.
+Original game code is available under the [MIT license](LICENSE). Three.js includes its own MIT notice in `dist/vendor/THREE-LICENSE.txt`. Reference photographs and supplied artwork retain their original rights and are excluded from the code license. The sound recordings are CC0, with credits in `dist/audio/credits.txt`. Photo identifications remain tentative, with uncertainty shown in the notebook. Southern crabgrass and horseweed are additional named weed references, not identifications from the supplied photos. Southern crabgrass native status is left unassigned here.
 
 
 ## Detail and performance update (0.4)
